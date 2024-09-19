@@ -36,16 +36,22 @@ To install and run the LLM Journaling Assistant locally:
     cd llm-journaling-assistant
     ```
 
-3.	Install the required dependencies:
+3.	Create the virtual environment:
+    ```bash
+    python3 -m venv .venv
+    source .venv/bin/activate
+    ```
+
+4.	Install the required dependencies:
     ```bash
     pip install -r requirements.txt
     ```
 
-4.	Set up your Google Calendar API credentials and add them to the project’s .env file.
+5.	Set up your Google Calendar API credentials and add them to the project’s .env file.
 
-5.	Run the application:
+6.	Run the application:
     ```bash
-    pip install -r requirements.txt
+    chainlit run app.py -w
     ```
 
 ## Usage

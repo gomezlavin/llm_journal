@@ -70,6 +70,6 @@ This project is licensed under the MIT License. See the `LICENSE` file for detai
 
 ## Authors
 
-- [Santiago Gomez] ([github.com/gomezlavin](https://github.com/gomezlavin))
+- Santiago Gomez ([github.com/gomezlavin](https://github.com/gomezlavin))
 - Isaac Ho ([github.com/isaacyho](https://github.com/isaacyho))
 - Harley Trung ([github.com/harley](https://github.com/harley))

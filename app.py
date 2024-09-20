@@ -2,7 +2,7 @@ import chainlit as cl
 import openai
 import datetime
 from dotenv import load_dotenv
-from prompts import SYSTEM_PROMPT
+from prompts import SYSTEM_PROMPT, JOURNAL_PROMPT
 from custom_calendar_reader import GoogleCalendarReader
 from langsmith.wrappers import wrap_openai
 from llama_index.core import VectorStoreIndex, Document
@@ -150,16 +150,36 @@ def format_event(event):
 
 
 # Add this function to handle journal updates
-def update_journal_file(message_content: str):
+async def update_journal_file(message_history: List[Dict[str, str]]):
     today = date.today()
-    filename = f"{today.strftime('%Y-%m-%d')}-entry.md"
+    filename = f"data/{today.strftime('%Y-%m-%d')}-entry.md"
 
-    if not os.path.exists(filename):
-        with open(filename, "w") as f:
-            f.write(f"# Journal Entry for {today.strftime('%B %d, %Y')}\n\n")
+    # Prepare the prompt for the LLM
+    prompt = JOURNAL_PROMPT + "\n\nConversation:\n" + "\n".join([f"{msg['role']}: {msg['content']}" for msg in message_history])
 
-    with open(filename, "a") as f:
-        f.write(f"{message_content}\n\n")
+    # Generate journal entry using LLM
+    journal_entry = await generate_journal_entry(prompt)
+
+    # Write the generated entry to the file
+    with open(filename, "w") as f:
+        f.write(f"# Journal Entry for {today.strftime('%B %d, %Y')}\n\n")
+        f.write(journal_entry)
+
+
+async def generate_journal_entry(prompt: str) -> str:
+    gen_kwargs = {"model": config["model"], "temperature": 0.7, "max_tokens": 1000}
+
+    if CONFIG_KEY == "mistral_7B":
+        response = await client.completions.create(prompt=prompt, **gen_kwargs)
+        journal_entry = response.choices[0].text
+    else:
+        response = await client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            **gen_kwargs
+        )
+        journal_entry = response.choices[0].message.content
+
+    return journal_entry
 
 
 @cl.on_message
@@ -169,10 +189,16 @@ async def on_message(message: cl.Message):
     # Add user message to history
     message_history.append({"role": "user", "content": message.content})
 
-    # Update the journal file with the user's message
-    update_journal_file(f"User: {message.content}")
+    # Change this part
+    actions = [
+        cl.Action(
+            name="Show Entry",
+            value="show_entry",
+            description="Show the journal entry for today",
+        )
+    ]
 
-    response_message = cl.Message(content="")
+    response_message = cl.Message(content="", actions=actions)
 
     full_response = ""
     async for token in generate_response(message_history):
@@ -184,17 +210,14 @@ async def on_message(message: cl.Message):
     message_history.append({"role": "assistant", "content": full_response})
     cl.user_session.set("message_history", message_history)
 
-    # Update the journal file with the assistant's response
-    update_journal_file(f"Assistant: {full_response}")
-
-    # ... existing code for actions ...
-
+    # Update the journal file with the LLM-generated entry
+    await update_journal_file(message_history)
 
 # Update the show_journal action to read from the file
-@cl.action_callback("show_journal")
-async def show_journal(action):
+@cl.action_callback("Show Entry")
+async def show_entry(action):
     today = date.today()
-    filename = f"{today.strftime('%Y-%m-%d')}-entry.md"
+    filename = f"data/{today.strftime('%Y-%m-%d')}-entry.md"
 
     if os.path.exists(filename):
         with open(filename, "r") as f:
@@ -205,7 +228,3 @@ async def show_journal(action):
     else:
         await cl.Message("No journal entry found for today.").send()
 
-
-# Remove or update the save_journal action as it's no longer needed
-# You can either remove the @cl.action_callback("save_journal") function
-# or update it to display a message that the journal is automatically saved

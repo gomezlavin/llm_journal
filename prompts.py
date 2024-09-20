@@ -23,3 +23,9 @@ Here's how you should approach this task:
 
 Remember, your role is to guide and facilitate through questions, not to write the journal for the user or repeat their responses. Keep your responses concise and focused on asking questions that help the user express their own thoughts and feelings about their day.
 """
+
+JOURNAL_PROMPT = """
+Given the prompt and conversation history, write a journal entry for the user.
+
+Only include the journal entry in your response. Don't ask the user questions.
+"""

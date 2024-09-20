@@ -9,6 +9,8 @@ from llama_index.core import VectorStoreIndex, Document
 from llama_index.core.retrievers import VectorIndexRetriever
 from typing import Dict, List
 import os
+import json
+from datetime import date
 
 # Load environment variables
 load_dotenv()
@@ -147,12 +149,28 @@ def format_event(event):
         return "- Unable to parse event details"
 
 
+# Add this function to handle journal updates
+def update_journal_file(message_content: str):
+    today = date.today()
+    filename = f"{today.strftime('%Y-%m-%d')}-entry.md"
+
+    if not os.path.exists(filename):
+        with open(filename, "w") as f:
+            f.write(f"# Journal Entry for {today.strftime('%B %d, %Y')}\n\n")
+
+    with open(filename, "a") as f:
+        f.write(f"{message_content}\n\n")
+
+
 @cl.on_message
 async def on_message(message: cl.Message):
     message_history = cl.user_session.get("message_history", [])
 
     # Add user message to history
     message_history.append({"role": "user", "content": message.content})
+
+    # Update the journal file with the user's message
+    update_journal_file(f"User: {message.content}")
 
     response_message = cl.Message(content="")
 
@@ -165,3 +183,29 @@ async def on_message(message: cl.Message):
 
     message_history.append({"role": "assistant", "content": full_response})
     cl.user_session.set("message_history", message_history)
+
+    # Update the journal file with the assistant's response
+    update_journal_file(f"Assistant: {full_response}")
+
+    # ... existing code for actions ...
+
+
+# Update the show_journal action to read from the file
+@cl.action_callback("show_journal")
+async def show_journal(action):
+    today = date.today()
+    filename = f"{today.strftime('%Y-%m-%d')}-entry.md"
+
+    if os.path.exists(filename):
+        with open(filename, "r") as f:
+            journal_content = f.read()
+        await cl.Message(
+            f"Here's your journal for today:\n\n```markdown\n{journal_content}\n```"
+        ).send()
+    else:
+        await cl.Message("No journal entry found for today.").send()
+
+
+# Remove or update the save_journal action as it's no longer needed
+# You can either remove the @cl.action_callback("save_journal") function
+# or update it to display a message that the journal is automatically saved

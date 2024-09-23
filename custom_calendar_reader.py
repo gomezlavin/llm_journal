@@ -4,6 +4,7 @@ Source code in llama-index-integrations/readers/llama-index-readers-google/llama
 
 import os
 import datetime
+import json
 from typing import Any, List, Optional, Union
 
 from llama_index.core.readers.base import BaseReader
@@ -23,6 +24,7 @@ class GoogleCalendarReader(BaseReader):
         self,
         number_of_results: Optional[int] = 100,
         start_date: Optional[Union[str, datetime.date]] = None,
+        local_data_filename: Optional[str] = None,
     ) -> List[Document]:
         """Load data from user's calendar.
 
@@ -32,28 +34,33 @@ class GoogleCalendarReader(BaseReader):
         """
         from googleapiclient.discovery import build
 
-        credentials = self._get_credentials()
-        service = build("calendar", "v3", credentials=credentials)
+        events_result = None
+        if local_data_filename is None:
+            credentials = self._get_credentials()
+            service = build("calendar", "v3", credentials=credentials)
 
-        if start_date is None:
-            start_date = datetime.date.today()
-        elif isinstance(start_date, str):
-            start_date = datetime.date.fromisoformat(start_date)
+            if start_date is None:
+                start_date = datetime.date.today()
+            elif isinstance(start_date, str):
+                start_date = datetime.date.fromisoformat(start_date)
 
-        start_datetime = datetime.datetime.combine(start_date, datetime.time.min)
-        start_datetime_utc = start_datetime.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+            start_datetime = datetime.datetime.combine(start_date, datetime.time.min)
+            start_datetime_utc = start_datetime.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
-        events_result = (
-            service.events()
-            .list(
-                calendarId="primary",
-                timeMin=start_datetime_utc,
-                maxResults=number_of_results,
-                singleEvents=True,
-                orderBy="startTime",
+            events_result = (
+                service.events()
+                .list(
+                    calendarId="primary",
+                    timeMin=start_datetime_utc,
+                    maxResults=number_of_results,
+                    singleEvents=True,
+                    orderBy="startTime",
+                )
+                .execute()
             )
-            .execute()
-        )
+        else:
+            with open(local_data_filename, "r") as file:
+                events_result = json.load(file)
 
         events = events_result.get("items", [])
 

@@ -60,7 +60,7 @@ async def fetch_calendar_events() -> List[str]:
     today = datetime.date.today()
     start_of_week = today - datetime.timedelta(days=today.weekday())
     calendar_documents = calendar_reader.load_data(
-        number_of_results=100, start_date=start_of_week
+        number_of_results=100, start_date=start_of_week, local_data_filename=os.getenv("GCAL_TEST_DATAFILE")
     )
     return [event.text for event in calendar_documents]
 
@@ -132,9 +132,14 @@ def format_event(event):
     import re
     from datetime import datetime
 
+    print(f"format event: {event}")
     summary_match = re.search(r"Summary: (.+?),", event)
-    start_time_match = re.search(r"Start time: (.+?)\+", event)
-    end_time_match = re.search(r"End time: (.+?)\+", event)
+    print(f"summary match: {summary_match}")
+
+    start_time_match = re.search(r"Start time: (.+?)[,+]", event)
+    print(f"start time match: {start_time_match}")
+    end_time_match = re.search(r"End time: (.+?)[,+]", event)
+    print(f"end time match: {end_time_match}")
 
     if summary_match and start_time_match and end_time_match:
         summary = summary_match.group(1)

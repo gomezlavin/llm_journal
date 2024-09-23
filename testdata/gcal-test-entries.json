@@ -1,0 +1,77 @@
+{
+ "kind": "calendar#events",
+ "etag": "\"p32sbfcmhlfbog0o\"",
+ "summary": "llm_test",
+ "description": "for codepath llm journaling app",
+ "updated": "2024-09-22T20:00:43.011Z",
+ "timeZone": "America/Argentina/Buenos_Aires",
+ "accessRole": "owner",
+ "defaultReminders": [],
+ "nextSyncToken": "CLi3stGr14gDELi3stGr14gDGAUgtuy-wQIotuy-wQI=",
+ "items": [
+  {
+   "kind": "calendar#event",
+   "etag": "\"3454070456094000\"",
+   "id": "7pn258cud4mbidosarcbulk069",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/calendar/event?eid=N3BuMjU4Y3VkNG1iaWRvc2FyY2J1bGswNjkgMTJlYmRkZWI5ODI0N2ExZTFkNGVkNTU4MGY4MGU1NjY0Y2Q3YzFlNGRlYWFmMmM3NjE5ZmQ1Zjg3M2NkNTdjZkBn",
+   "created": "2024-09-22T20:00:28.000Z",
+   "updated": "2024-09-22T20:00:28.047Z",
+   "summary": "running",
+   "creator": {
+    "email": "isaacyho@gmail.com"
+   },
+   "organizer": {
+    "email": "12ebddeb98247a1e1d4ed5580f80e5664cd7c1e4deaaf2c7619fd5f873cd57cf@group.calendar.google.com",
+    "displayName": "llm_test",
+    "self": true
+   },
+   "start": {
+    "dateTime": "2024-09-22T18:00:00-03:00",
+    "timeZone": "America/Argentina/Buenos_Aires"
+   },
+   "end": {
+    "dateTime": "2024-09-22T18:30:00-03:00",
+    "timeZone": "America/Argentina/Buenos_Aires"
+   },
+   "iCalUID": "7pn258cud4mbidosarcbulk069@google.com",
+   "sequence": 0,
+   "reminders": {
+    "useDefault": true
+   },
+   "eventType": "default"
+  },
+  {
+   "kind": "calendar#event",
+   "etag": "\"3454070486022000\"",
+   "id": "11loj6ckuls27r0e77deq4j203",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/calendar/event?eid=MTFsb2o2Y2t1bHMyN3IwZTc3ZGVxNGoyMDMgMTJlYmRkZWI5ODI0N2ExZTFkNGVkNTU4MGY4MGU1NjY0Y2Q3YzFlNGRlYWFmMmM3NjE5ZmQ1Zjg3M2NkNTdjZkBn",
+   "created": "2024-09-22T20:00:43.000Z",
+   "updated": "2024-09-22T20:00:43.011Z",
+   "summary": "meditation",
+   "creator": {
+    "email": "isaacyho@gmail.com"
+   },
+   "organizer": {
+    "email": "12ebddeb98247a1e1d4ed5580f80e5664cd7c1e4deaaf2c7619fd5f873cd57cf@group.calendar.google.com",
+    "displayName": "llm_test",
+    "self": true
+   },
+   "start": {
+    "dateTime": "2024-09-22T10:00:00-03:00",
+    "timeZone": "America/Argentina/Buenos_Aires"
+   },
+   "end": {
+    "dateTime": "2024-09-22T10:15:00-03:00",
+    "timeZone": "America/Argentina/Buenos_Aires"
+   },
+   "iCalUID": "11loj6ckuls27r0e77deq4j203@google.com",
+   "sequence": 0,
+   "reminders": {
+    "useDefault": true
+   },
+   "eventType": "default"
+  }
+ ]
+}

@@ -28,7 +28,7 @@ Remember, your role is to guide and facilitate through questions, not to write t
 
 
 JOURNAL_PROMPT = """
-Given the prompt and conversation history, write a journal entry for the user.
+Given the prompt and conversation history, write a journal entry for the user. Do not make things up. Only write about the events and prompts that the user has shared.
 
 Only include the journal entry in your response. Don't ask the user questions.
 """

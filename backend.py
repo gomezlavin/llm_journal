@@ -3,6 +3,7 @@ import os
 import markdown
 from datetime import datetime
 import re
+import html2text
 
 app = Flask(__name__, static_folder="static")
 
@@ -34,7 +35,9 @@ def get_journal_entries():
                         "filename": filename,
                     }
                 )
-    return jsonify(sorted(entries, key=lambda x: x["filename"], reverse=True))
+    # Sort entries by filename in descending order (latest first)
+    entries.sort(key=lambda x: x["filename"], reverse=True)
+    return jsonify(entries)
 
 
 @app.route("/api/journal-entry/<filename>")
@@ -43,6 +46,7 @@ def get_journal_entry(filename):
     if os.path.exists(file_path):
         with open(file_path, "r") as f:
             content = f.read()
+            # Convert Markdown to HTML for display in the editor
             html_content = markdown.markdown(content)
             return html_content
     return "Entry not found", 404
@@ -64,7 +68,7 @@ def create_new_entry():
     title = f"Today, ..."
     file_path = os.path.join("data", filename)
 
-    # Create a new entry file
+    # Create a new entry file with minimal content
     with open(file_path, "w") as f:
         f.write(f"# {title}\n\n")
 
@@ -76,6 +80,23 @@ def create_new_entry():
             "preview": "",
         }
     )
+
+
+@app.route("/api/update-entry/<filename>", methods=["POST"])
+def update_entry(filename):
+    file_path = os.path.join("data", filename)
+    if not os.path.exists(file_path):
+        return jsonify({"error": "Entry not found"}), 404
+
+    content = request.json.get("content")
+    if not content:
+        return jsonify({"error": "No content provided"}), 400
+
+    # The content is already in Markdown format, so we can write it directly
+    with open(file_path, "w") as f:
+        f.write(content)
+
+    return jsonify({"message": "Entry updated successfully"})
 
 
 if __name__ == "__main__":

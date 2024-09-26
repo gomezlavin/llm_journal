@@ -77,10 +77,14 @@ html {
   color: #333;
 }
 
-.editor-content:empty:before {
-  content: 'Start writing your journal entry here...';
+.editor-content:empty::before {
+  content: "Start writing your journal entry here...";
   color: #999;
+  font-style: italic;
 }
+
+/* Remove this class as we're not using it anymore */
+/* .editor-content.placeholder::before { ... } */
 
 .new-entry-btn {
   width: 100%;

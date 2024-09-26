@@ -11,6 +11,9 @@ from typing import Dict, List
 import os
 import json
 from datetime import date
+from flask import Flask, jsonify, send_file
+import markdown
+import re
 
 # Load environment variables
 load_dotenv()
@@ -60,7 +63,9 @@ async def fetch_calendar_events() -> List[str]:
     today = datetime.date.today()
     start_of_week = today - datetime.timedelta(days=today.weekday())
     calendar_documents = calendar_reader.load_data(
-        number_of_results=100, start_date=start_of_week, local_data_filename=os.getenv("GCAL_TEST_DATAFILE")
+        number_of_results=100,
+        start_date=start_of_week,
+        local_data_filename=os.getenv("GCAL_TEST_DATAFILE"),
     )
     return [event.text for event in calendar_documents]
 
@@ -139,7 +144,7 @@ def format_event(event):
     start_time_match = re.search(r"Start time: (.+?)[,+]", event)
     print(f"start time match: {start_time_match}")
     end_time_match = re.search(r"End time: (.+?)[,+]", event)
-    print(f"end time match: {end_time_match}")
+    print(f"end time match: {start_time_match}")
 
     if summary_match and start_time_match and end_time_match:
         summary = summary_match.group(1)
@@ -154,21 +159,32 @@ def format_event(event):
         return "- Unable to parse event details"
 
 
-# Add this function to handle journal updates
+def generate_unique_filename():
+    today = datetime.datetime.now().strftime("%Y-%m-%d")
+    timestamp = datetime.datetime.now().strftime("%H%M%S")
+    return f"{today}-{timestamp}-entry.md"
+
+
+# Update this function to handle journal updates
 async def update_journal_file(message_history: List[Dict[str, str]]):
-    today = date.today()
-    filename = f"data/{today.strftime('%Y-%m-%d')}-entry.md"
+    filename = generate_unique_filename()
+    file_path = os.path.join("data", filename)
 
     # Prepare the prompt for the LLM
-    prompt = JOURNAL_PROMPT + "\n\nConversation:\n" + "\n".join([f"{msg['role']}: {msg['content']}" for msg in message_history])
+    prompt = (
+        JOURNAL_PROMPT
+        + "\n\nConversation:\n"
+        + "\n".join([f"{msg['role']}: {msg['content']}" for msg in message_history])
+    )
 
     # Generate journal entry using LLM
     journal_entry = await generate_journal_entry(prompt)
 
     # Write the generated entry to the file
-    with open(filename, "w") as f:
-        f.write(f"# Journal Entry for {today.strftime('%B %d, %Y')}\n\n")
-        f.write(journal_entry)
+    with open(file_path, "w") as f:
+        f.write(journal_entry.strip())
+
+    return filename
 
 
 async def generate_journal_entry(prompt: str) -> str:
@@ -179,8 +195,7 @@ async def generate_journal_entry(prompt: str) -> str:
         journal_entry = response.choices[0].text
     else:
         response = await client.chat.completions.create(
-            messages=[{"role": "user", "content": prompt}],
-            **gen_kwargs
+            messages=[{"role": "user", "content": prompt}], **gen_kwargs
         )
         journal_entry = response.choices[0].message.content
 
@@ -194,7 +209,6 @@ async def on_message(message: cl.Message):
     # Add user message to history
     message_history.append({"role": "user", "content": message.content})
 
-    # Change this part
     actions = [
         cl.Action(
             name="Show Entry",
@@ -216,20 +230,99 @@ async def on_message(message: cl.Message):
     cl.user_session.set("message_history", message_history)
 
     # Update the journal file with the LLM-generated entry
-    await update_journal_file(message_history)
+    filename = await update_journal_file(message_history)
+
+    if cl.context.session.client_type == "copilot":
+        fn = cl.CopilotFunction(name="test", args={"msg": filename})
+        res = await fn.acall()
+        await cl.Message(content=res).send()
+
 
 # Update the show_journal action to read from the file
 @cl.action_callback("Show Entry")
 async def show_entry(action):
-    today = date.today()
-    filename = f"data/{today.strftime('%Y-%m-%d')}-entry.md"
+    entries = os.listdir("data")
+    entries.sort(reverse=True)
+    latest_entry = next((e for e in entries if e.endswith("-entry.md")), None)
 
-    if os.path.exists(filename):
+    if latest_entry:
+        filename = os.path.join("data", latest_entry)
         with open(filename, "r") as f:
             journal_content = f.read()
         await cl.Message(
-            f"Here's your journal for today:\n\n```markdown\n{journal_content}\n```"
+            f"Here's your latest journal entry:\n\n```markdown\n{journal_content}\n```"
         ).send()
     else:
-        await cl.Message("No journal entry found for today.").send()
+        await cl.Message("No journal entry found.").send()
 
+
+app = Flask(__name__, static_folder="static")
+
+
+@app.route("/api/journal-entries")
+def get_journal_entries():
+    entries = []
+    for filename in os.listdir("data"):
+        if filename.endswith(".md"):
+            file_path = os.path.join("data", filename)
+            with open(file_path, "r") as f:
+                content = f.read().split("\n")
+                title = content[0].strip("# ")  # Remove Markdown heading syntax
+                body = content[1] if len(content) > 1 else ""
+                date_str = filename.split("-")[:3]
+                date = "-".join(date_str[:3])  # Keep as YYYY-MM-DD
+                preview = body[:100] + "..." if len(body) > 100 else body
+                entries.append(
+                    {
+                        "date": date,
+                        "title": title,
+                        "preview": preview,
+                        "filename": filename,
+                    }
+                )
+    return jsonify(sorted(entries, key=lambda x: x["filename"], reverse=True))
+
+
+@app.route("/api/journal-entry/<filename>")
+def get_journal_entry(filename):
+    file_path = os.path.join("data", filename)
+    if os.path.exists(file_path):
+        with open(file_path, "r") as f:
+            content = f.read()
+            html_content = markdown.markdown(content)
+            return html_content
+    return "Entry not found", 404
+
+
+@app.route("/api/new-entry", methods=["POST"])
+def create_new_entry():
+    filename = generate_unique_filename()
+    title = f"Today, ..."
+    file_path = os.path.join("data", filename)
+
+    # Create a new entry file
+    with open(file_path, "w") as f:
+        f.write(f"# {title}\n\n")
+
+    return jsonify(
+        {
+            "filename": filename,
+            "title": title,
+            "date": filename.split("-")[0],
+            "preview": "",
+        }
+    )
+
+
+@app.route("/")
+def serve_journal():
+    return send_file("journal.html")
+
+
+@app.route("/static/<path:path>")
+def serve_static(path):
+    return send_from_directory("static", path)
+
+
+if __name__ == "__main__":
+    app.run(debug=True)

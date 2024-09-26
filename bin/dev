@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+# Check if Foreman is installed
+if command -v foreman &> /dev/null; then
+    echo "Running with Foreman..."
+    exec foreman start -f Procfile
+# Check if Honcho is installed
+elif command -v honcho &> /dev/null; then
+    echo "Running with Honcho..."
+    exec honcho start
+else
+    echo "Error: Neither Foreman nor Honcho is installed."
+    echo "Please install one of them:"
+    echo "  For Foreman: gem install foreman"
+    echo "  For Honcho: pip install honcho"
+    exit 1
+fi

@@ -63,12 +63,12 @@ class GoogleCalendarReader(BaseReader):
                 events_result = json.load(file)
 
         events = events_result.get("items", [])
-
         if not events:
             return []
 
         results = []
         for event in events:
+            print(f"event: {event['summary']} {event['start']} {event['end']}")
             if "dateTime" in event["start"]:
                 start_time = event["start"]["dateTime"]
             else:
@@ -83,7 +83,7 @@ class GoogleCalendarReader(BaseReader):
             event_string += f"Summary: {event['summary']}, "
             event_string += f"Start time: {start_time}, "
             event_string += f"End time: {end_time}, "
-
+            print(f"event_string: {event_string}")
             organizer = event.get("organizer", {})
             display_name = organizer.get("displayName", "N/A")
             email = organizer.get("email", "N/A")

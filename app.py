@@ -12,9 +12,6 @@ import os
 import json
 from datetime import date
 
-# Load environment variables
-load_dotenv()
-
 # Configuration
 configurations = {
     "mistral_7B_instruct": {
@@ -33,16 +30,20 @@ configurations = {
         "model": "gpt-4o-mini",
     },
 }
-
 CONFIG_KEY = "openai_gpt-4"
 ENABLE_SYSTEM_PROMPT = True
 
-# Initialize services
-config = configurations[CONFIG_KEY]
-client = wrap_openai(
-    openai.AsyncClient(api_key=config["api_key"], base_url=config["endpoint_url"])
-)
-calendar_reader = GoogleCalendarReader()
+if __name__ == "__main__":
+    # Load environment variables
+    load_dotenv()
+
+
+    # Initialize services
+    config = configurations[CONFIG_KEY]
+    client = wrap_openai(
+        openai.AsyncClient(api_key=config["api_key"], base_url=config["endpoint_url"])
+    )
+    calendar_reader = GoogleCalendarReader()
 
 
 async def create_calendar_index():
@@ -51,6 +52,7 @@ async def create_calendar_index():
         Document(text=event, metadata={"source": "calendar"})
         for event in calendar_events
     ]
+    print(f"create_calendar_index: {documents}")
     index = VectorStoreIndex.from_documents(documents)
     return index
 
@@ -58,10 +60,12 @@ async def create_calendar_index():
 # Helper functions
 async def fetch_calendar_events() -> List[str]:
     today = datetime.date.today()
+    today = datetime.date(2022, 1, 1) #XXX for testing
     start_of_week = today - datetime.timedelta(days=today.weekday())
     calendar_documents = calendar_reader.load_data(
         number_of_results=100, start_date=start_of_week, local_data_filename=os.getenv("GCAL_TEST_DATAFILE")
     )
+    print(f"fetch_calendar_events: {calendar_documents}")
     return [event.text for event in calendar_documents]
 
 
@@ -94,6 +98,7 @@ async def fetch_todays_events() -> List[str]:
     calendar_documents = calendar_reader.load_data(
         number_of_results=10, start_date=today, end_date=today
     )
+    print(f"fetch_todays_events: {calendar_documents}")
     return [event.text for event in calendar_documents]
 
 
@@ -112,6 +117,7 @@ async def on_chat_start():
 
     if response.source_nodes:
         events = [node.text for node in response.source_nodes]
+        print(f"events: {events}")
         event_summary = "\n".join(format_event(event) for event in events)
         follow_up = f"I found some events that might be interesting to journal about:\n\n{event_summary}\n\nWhich one would you like to start with?"
     else:

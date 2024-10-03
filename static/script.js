@@ -29,18 +29,10 @@ async function loadJournalEntries() {
 // Function to load a specific entry
 async function loadEntry(filename) {
   try {
-    const response = await fetch(`/api/journal-entry/${filename}`);
-    const content = await response.text();
     const editorContent = document.getElementById("editor-content");
-
-    editorContent.innerHTML = content;
     editorContent.dataset.currentFilename = filename;
 
-    // Remove existing auto-save listeners to avoid duplicates
-    editorContent.removeEventListener("input", debounce(autoSaveEntry, 1000));
-
-    // Add event listener for auto-save
-    editorContent.addEventListener("input", debounce(autoSaveEntry, 1000));
+    await reloadCurrentJournalEntry();
 
     // Focus on the editor content
     editorContent.focus();
@@ -52,6 +44,9 @@ async function loadEntry(filename) {
     range.collapse(false);
     sel.removeAllRanges();
     sel.addRange(range);
+
+    // Send the current filename to Chainlit copilot
+    sendCurrentFilenameToChainlit(filename);
   } catch (error) {
     console.error("Error loading entry:", error);
   }
@@ -141,7 +136,29 @@ window.addEventListener("load", () => {
   // Add event listener for the editor content
   const editorContent = document.getElementById("editor-content");
   editorContent.addEventListener("focus", handleEditorFocus);
+
+  // Mount Chainlit widget and open it
+  window.mountChainlitWidget({
+    chainlitServer: "http://localhost:8000",
+    autoOpen: true, // This will open the widget when the page loads
+  });
+
+  // Send the current filename to Chainlit when the widget is ready
+  window.addEventListener("chainlit-widget-ready", () => {
+    const currentFilename = editorContent.dataset.currentFilename;
+    if (currentFilename) {
+      sendCurrentFilenameToChainlit(currentFilename);
+    }
+  });
 });
+
+// Function to send the current filename to Chainlit
+function sendCurrentFilenameToChainlit(filename) {
+  window.sendChainlitMessage({
+    type: "system_message",
+    output: JSON.stringify({ action: "load_entry", filename: filename }),
+  });
+}
 
 // Modify the handleEditorFocus function
 async function handleEditorFocus() {
@@ -157,12 +174,14 @@ async function handleEditorFocus() {
 // Event listener for Chainlit calls
 window.addEventListener("chainlit-call-fn", (e) => {
   const { name, args, callback } = e.detail;
-  if (name === "test") {
-    console.log(name, args);
-    callback("You sent: " + args.msg);
+  if (name === "update_journal") {
+    console.log("Updating journal entry:", args.filename);
     reloadCurrentJournalEntry();
+    callback("Journal entry updated successfully");
   }
 });
+
+// Remove the old chainlit-message event listener as it's no longer needed
 
 // Mount Chainlit widget
 window.mountChainlitWidget({
@@ -201,9 +220,24 @@ async function createNewEntry() {
 }
 
 // Function to reload the current journal entry in the editor
-function reloadCurrentJournalEntry() {
+async function reloadCurrentJournalEntry() {
   const editorContent = document.getElementById("editor-content");
-  if (editorContent.dataset.currentFilename) {
-    loadEntry(editorContent.dataset.currentFilename);
+  const currentFilename = editorContent.dataset.currentFilename;
+  if (currentFilename) {
+    try {
+      const response = await fetch(`/api/journal-entry/${currentFilename}`);
+      if (response.ok) {
+        const content = await response.text();
+        editorContent.innerHTML = content;
+        console.log("Journal entry reloaded successfully");
+
+        // Refresh the entry list on the sidebar
+        await loadJournalEntries();
+      } else {
+        console.error("Failed to reload journal entry");
+      }
+    } catch (error) {
+      console.error("Error reloading journal entry:", error);
+    }
   }
 }

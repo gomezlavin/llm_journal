@@ -29,7 +29,7 @@ Remember, your role is to guide and facilitate through questions, not to write t
 JOURNAL_PROMPT = """
 Given the prompt and conversation history, update the journal entry with a new sentence or two augmenting the existing entry.
 
-Do not make things up. Write simple sentences or partial sentences with a [continue here...] text for the user to continue writing.
+Do not make things up. Write simple sentences or partial sentences for the user to continue writing.
 
 Only include the journal entry in your response. Don't ask the user questions in the response.
 """

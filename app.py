@@ -105,32 +105,16 @@ async def fetch_todays_events() -> List[str]:
 @cl.on_chat_start
 async def on_chat_start():
     today = datetime.date.today()
-    welcome_message = f"Hi there! I'm here to help you update your journal for today, {today.strftime('%B %d, %Y')}. Let's take a look at your recent events to get started."
+    welcome_message = f"Hi there! I'm here to help you with your journal entries. When you load an entry, I'll be ready to assist you with it."
     await cl.Message(content=welcome_message).send()
 
-    index = await create_calendar_index()
-    retriever = VectorIndexRetriever(index=index, similarity_top_k=3)
-    query_engine = index.as_query_engine()
-
-    today_query = f"What events are relevant for journaling about today, {today.strftime('%Y-%m-%d')}?"
-    response = query_engine.query(today_query)
-
-    if response.source_nodes:
-        events = [node.text for node in response.source_nodes]
-        event_summary = "\n".join(format_event(event) for event in events)
-        follow_up = f"I found some events that might be interesting to journal about:\n\n{event_summary}\n\nWhich one would you like to start with?"
-    else:
-        follow_up = "I don't see any specific events for today. Is there anything particular you'd like to reflect on in your journal?"
-
-    await cl.Message(content=follow_up).send()
-
-    # Initialize message history with system prompt and initial messages
+    # Initialize message history with system prompt and initial message
     message_history = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "assistant", "content": welcome_message},
-        {"role": "assistant", "content": follow_up},
     ]
     cl.user_session.set("message_history", message_history)
+    cl.user_session.set("current_entry", None)
 
 
 def format_event(event):
@@ -205,19 +189,43 @@ async def generate_journal_entry(prompt: str) -> str:
 @cl.on_message
 async def on_message(message: cl.Message):
     message_history = cl.user_session.get("message_history", [])
+    current_entry = cl.user_session.get("current_entry")
+
+    # Check if the message is a system message for loading an entry
+    if message.type == "system_message":
+        try:
+            data = json.loads(message.content)
+            if data.get("action") == "load_entry":
+                filename = data.get("filename")
+                if filename:
+                    # Load the journal entry
+                    with open(os.path.join("data", filename), "r") as f:
+                        entry_content = f.read()
+
+                    # Update the current entry
+                    cl.user_session.set("current_entry", filename)
+
+                    # Inform the user that the entry has been loaded
+                    await cl.Message(
+                        content=f"Journal entry '{filename}' has been loaded. How can I assist you with this entry?"
+                    ).send()
+
+                    # Update the message history with the loaded entry
+                    message_history.append(
+                        {
+                            "role": "system",
+                            "content": f"Loaded journal entry: {filename}\n\n{entry_content}",
+                        }
+                    )
+                    cl.user_session.set("message_history", message_history)
+                    return
+        except json.JSONDecodeError:
+            pass  # If it's not a valid JSON, treat it as a regular message
 
     # Add user message to history
     message_history.append({"role": "user", "content": message.content})
 
-    actions = [
-        cl.Action(
-            name="Show Entry",
-            value="show_entry",
-            description="Show the journal entry for today",
-        )
-    ]
-
-    response_message = cl.Message(content="", actions=actions)
+    response_message = cl.Message(content="")
 
     full_response = ""
     async for token in generate_response(message_history):
@@ -229,31 +237,37 @@ async def on_message(message: cl.Message):
     message_history.append({"role": "assistant", "content": full_response})
     cl.user_session.set("message_history", message_history)
 
-    # Update the journal file with the LLM-generated entry
-    filename = await update_journal_file(message_history)
+    # Only update the current journal entry if one is loaded
+    if current_entry:
+        updated_filename = await update_journal_file(current_entry, message_history)
 
-    if cl.context.session.client_type == "copilot":
-        fn = cl.CopilotFunction(name="test", args={"msg": filename})
-        res = await fn.acall()
-        await cl.Message(content=res).send()
+        # Use CopilotFunction to notify the frontend
+        if cl.context.session.client_type == "copilot":
+            fn = cl.CopilotFunction(
+                name="update_journal", args={"filename": updated_filename}
+            )
+            await fn.acall()
 
 
-# Update the show_journal action to read from the file
-@cl.action_callback("Show Entry")
-async def show_entry(action):
-    entries = os.listdir("data")
-    entries.sort(reverse=True)
-    latest_entry = next((e for e in entries if e.endswith("-entry.md")), None)
+# Update this function to handle journal updates for a specific entry
+async def update_journal_file(filename: str, message_history: List[Dict[str, str]]):
+    file_path = os.path.join("data", filename)
 
-    if latest_entry:
-        filename = os.path.join("data", latest_entry)
-        with open(filename, "r") as f:
-            journal_content = f.read()
-        await cl.Message(
-            f"Here's your latest journal entry:\n\n```markdown\n{journal_content}\n```"
-        ).send()
-    else:
-        await cl.Message("No journal entry found.").send()
+    # Prepare the prompt for the LLM
+    prompt = (
+        JOURNAL_PROMPT
+        + "\n\nConversation:\n"
+        + "\n".join([f"{msg['role']}: {msg['content']}" for msg in message_history])
+    )
+
+    # Generate journal entry using LLM
+    journal_entry = await generate_journal_entry(prompt)
+
+    # Write the generated entry to the file
+    with open(file_path, "w") as f:
+        f.write(journal_entry.strip())
+
+    return filename
 
 
 app = Flask(__name__, static_folder="static")

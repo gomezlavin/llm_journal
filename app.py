@@ -125,7 +125,6 @@ async def handle_reauth():
 
 @cl.on_chat_start
 async def on_chat_start():
-    today = datetime.date.today()
     welcome_message = "Hi there! I'm here to help you with your journal entries."
     await cl.Message(content=welcome_message).send()
 
@@ -141,16 +140,18 @@ async def on_chat_start():
         await cl.Message(
             content="Click the button below to re-authenticate:", actions=actions
         ).send()
+    else:
+        # Inform the user about the number of events loaded
+        total_events = len(calendar_index.docstore.docs)
+        today_event_count = len(todays_events)
+        await cl.Message(
+            content=f"I've successfully loaded {total_events} events from your calendar. You have {today_event_count} event(s) scheduled for today."
+        ).send()
 
     cl.user_session.set("calendar_index", calendar_index)
 
-    events_summary = (
-        "Today's events:\n" + "\n".join(todays_events)
-        if todays_events
-        else "Unable to fetch today's events."
-    )
-
-    # Initialize message history with system prompt and today's events
+    # Initialize message history with system prompt and today's events (without displaying them)
+    events_summary = f"Today's events: {len(todays_events)}"
     message_history = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "system", "content": events_summary},

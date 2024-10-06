@@ -105,16 +105,19 @@ async def fetch_todays_events() -> List[str]:
 @cl.on_chat_start
 async def on_chat_start():
     today = datetime.date.today()
-    welcome_message = f"Hi there! I'm here to help you with your journal entries. When you load an entry, I'll be ready to assist you with it."
+    welcome_message = "Hi there! I'm here to help you with your journal entries."
     await cl.Message(content=welcome_message).send()
 
-    # Initialize message history with system prompt and initial message
+    # Initialize message history
     message_history = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "assistant", "content": welcome_message},
     ]
     cl.user_session.set("message_history", message_history)
     cl.user_session.set("current_entry", None)
+
+    # Create calendar index to load events
+    await create_calendar_index()  # Call to fetch and index calendar events
 
 
 def format_event(event):

@@ -6,7 +6,7 @@ from prompts import SYSTEM_PROMPT, JOURNAL_PROMPT
 from custom_calendar_reader import GoogleCalendarReader
 from langsmith.wrappers import wrap_openai
 from llama_index.core import VectorStoreIndex, Document
-from typing import Dict, List
+from typing import Dict, List, Tuple
 import os
 import json
 from google.auth.exceptions import RefreshError
@@ -33,20 +33,20 @@ calendar_reader = GoogleCalendarReader()
 
 async def create_calendar_index():
     try:
-        calendar_events = await fetch_calendar_events()
+        all_events, todays_events = await fetch_and_filter_calendar_events()
         documents = [
             Document(text=event, metadata={"source": "calendar"})
-            for event in calendar_events
+            for event in all_events
         ]
         index = VectorStoreIndex.from_documents(documents)
-        return index
+        return index, todays_events
     except RefreshError as e:
         print(f"Error refreshing Google Calendar token: {e}")
-        return None
+        return None, []
 
 
 # Helper functions
-async def fetch_calendar_events() -> List[str]:
+async def fetch_and_filter_calendar_events() -> Tuple[List[str], List[str]]:
     today = datetime.date.today()
     start_of_week = today - datetime.timedelta(days=today.weekday())
     try:
@@ -55,10 +55,25 @@ async def fetch_calendar_events() -> List[str]:
             start_date=start_of_week,
             local_data_filename=os.getenv("GCAL_TEST_DATAFILE"),
         )
-        return [event.text for event in calendar_documents]
+        all_events = [event.text for event in calendar_documents]
+        todays_events = []
+        for event in calendar_documents:
+            start_time_match = re.search(r"Start time: (\S+)", event.text)
+            if start_time_match:
+                start_time_str = start_time_match.group(1).rstrip(",")
+                try:
+                    start_time = datetime.datetime.fromisoformat(start_time_str)
+                    if start_time.date() == today:
+                        todays_events.append(event.text)
+                except ValueError as e:
+                    print(f"Error parsing date for event: {event.text}. Error: {e}")
+        return all_events, todays_events[:10]
     except RefreshError as e:
         print(f"Error refreshing Google Calendar token: {e}")
         raise
+    except Exception as e:
+        print(f"Error fetching calendar events: {e}")
+        return [], []
 
 
 async def generate_response(message_history: List[Dict[str, str]]) -> str:
@@ -80,32 +95,6 @@ async def generate_response(message_history: List[Dict[str, str]]) -> str:
             yield token
 
 
-async def fetch_todays_events() -> List[str]:
-    today = datetime.date.today()
-    try:
-        calendar_documents = calendar_reader.load_data(
-            number_of_results=100,
-            start_date=today,
-        )
-        todays_events = []
-        for event in calendar_documents:
-            start_time_match = re.search(r"Start time: (\S+)", event.text)
-            if start_time_match:
-                start_time_str = start_time_match.group(1).rstrip(
-                    ","
-                )  # Remove trailing comma
-                try:
-                    start_time = datetime.datetime.fromisoformat(start_time_str)
-                    if start_time.date() == today:
-                        todays_events.append(event.text)
-                except ValueError as e:
-                    print(f"Error parsing date for event: {event.text}. Error: {e}")
-        return todays_events[:10]  # Return at most 10 events
-    except Exception as e:
-        print(f"Error fetching today's events: {e}")
-        return []
-
-
 # Add this new function to handle re-authentication
 async def handle_reauth():
     token_path = "token.json"
@@ -123,7 +112,7 @@ async def handle_reauth():
 
     # Attempt to fetch calendar events to trigger the authentication flow
     try:
-        await fetch_calendar_events()
+        await fetch_and_filter_calendar_events()
         await cl.Message(
             content="Re-authentication successful. You can now use calendar features."
         ).send()
@@ -140,8 +129,8 @@ async def on_chat_start():
     welcome_message = "Hi there! I'm here to help you with your journal entries."
     await cl.Message(content=welcome_message).send()
 
-    # Create calendar index to load events
-    calendar_index = await create_calendar_index()
+    # Create calendar index and fetch today's events
+    calendar_index, todays_events = await create_calendar_index()
     if calendar_index is None:
         await cl.Message(
             content="I'm having trouble accessing your calendar. You may need to re-authenticate."
@@ -155,8 +144,6 @@ async def on_chat_start():
 
     cl.user_session.set("calendar_index", calendar_index)
 
-    # Fetch today's events
-    todays_events = await fetch_todays_events()
     events_summary = (
         "Today's events:\n" + "\n".join(todays_events)
         if todays_events

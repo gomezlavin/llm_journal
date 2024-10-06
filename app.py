@@ -9,6 +9,8 @@ from llama_index.core import VectorStoreIndex, Document
 from typing import Dict, List
 import os
 import json
+from google.auth.exceptions import RefreshError
+import re
 
 # Load environment variables
 load_dotenv()
@@ -30,25 +32,33 @@ calendar_reader = GoogleCalendarReader()
 
 
 async def create_calendar_index():
-    calendar_events = await fetch_calendar_events()
-    documents = [
-        Document(text=event, metadata={"source": "calendar"})
-        for event in calendar_events
-    ]
-    index = VectorStoreIndex.from_documents(documents)
-    return index
+    try:
+        calendar_events = await fetch_calendar_events()
+        documents = [
+            Document(text=event, metadata={"source": "calendar"})
+            for event in calendar_events
+        ]
+        index = VectorStoreIndex.from_documents(documents)
+        return index
+    except RefreshError as e:
+        print(f"Error refreshing Google Calendar token: {e}")
+        return None
 
 
 # Helper functions
 async def fetch_calendar_events() -> List[str]:
     today = datetime.date.today()
     start_of_week = today - datetime.timedelta(days=today.weekday())
-    calendar_documents = calendar_reader.load_data(
-        number_of_results=100,
-        start_date=start_of_week,
-        local_data_filename=os.getenv("GCAL_TEST_DATAFILE"),
-    )
-    return [event.text for event in calendar_documents]
+    try:
+        calendar_documents = calendar_reader.load_data(
+            number_of_results=100,
+            start_date=start_of_week,
+            local_data_filename=os.getenv("GCAL_TEST_DATAFILE"),
+        )
+        return [event.text for event in calendar_documents]
+    except RefreshError as e:
+        print(f"Error refreshing Google Calendar token: {e}")
+        raise
 
 
 async def generate_response(message_history: List[Dict[str, str]]) -> str:
@@ -72,10 +82,56 @@ async def generate_response(message_history: List[Dict[str, str]]) -> str:
 
 async def fetch_todays_events() -> List[str]:
     today = datetime.date.today()
-    calendar_documents = calendar_reader.load_data(
-        number_of_results=10, start_date=today, end_date=today
-    )
-    return [event.text for event in calendar_documents]
+    try:
+        calendar_documents = calendar_reader.load_data(
+            number_of_results=100,
+            start_date=today,
+        )
+        todays_events = []
+        for event in calendar_documents:
+            start_time_match = re.search(r"Start time: (\S+)", event.text)
+            if start_time_match:
+                start_time_str = start_time_match.group(1).rstrip(
+                    ","
+                )  # Remove trailing comma
+                try:
+                    start_time = datetime.datetime.fromisoformat(start_time_str)
+                    if start_time.date() == today:
+                        todays_events.append(event.text)
+                except ValueError as e:
+                    print(f"Error parsing date for event: {event.text}. Error: {e}")
+        return todays_events[:10]  # Return at most 10 events
+    except Exception as e:
+        print(f"Error fetching today's events: {e}")
+        return []
+
+
+# Add this new function to handle re-authentication
+async def handle_reauth():
+    token_path = "token.json"
+    if os.path.exists(token_path):
+        os.remove(token_path)
+        print(f"Deleted {token_path}")
+
+    await cl.Message(
+        content="The old token has been removed. Please restart the application to re-authenticate."
+    ).send()
+
+    # Reinitialize the calendar reader
+    global calendar_reader
+    calendar_reader = GoogleCalendarReader()
+
+    # Attempt to fetch calendar events to trigger the authentication flow
+    try:
+        await fetch_calendar_events()
+        await cl.Message(
+            content="Re-authentication successful. You can now use calendar features."
+        ).send()
+    except Exception as e:
+        print(f"Error during re-authentication: {e}")
+        await cl.Message(
+            content="There was an error during re-authentication. Please check the console and ensure you've granted the necessary permissions."
+        ).send()
 
 
 @cl.on_chat_start
@@ -84,16 +140,37 @@ async def on_chat_start():
     welcome_message = "Hi there! I'm here to help you with your journal entries."
     await cl.Message(content=welcome_message).send()
 
-    # Initialize message history
+    # Create calendar index to load events
+    calendar_index = await create_calendar_index()
+    if calendar_index is None:
+        await cl.Message(
+            content="I'm having trouble accessing your calendar. You may need to re-authenticate."
+        ).send()
+
+        # Add a button for re-authentication
+        actions = [cl.Action(name="reauth", value="reauth", label="Re-authenticate")]
+        await cl.Message(
+            content="Click the button below to re-authenticate:", actions=actions
+        ).send()
+
+    cl.user_session.set("calendar_index", calendar_index)
+
+    # Fetch today's events
+    todays_events = await fetch_todays_events()
+    events_summary = (
+        "Today's events:\n" + "\n".join(todays_events)
+        if todays_events
+        else "Unable to fetch today's events."
+    )
+
+    # Initialize message history with system prompt and today's events
     message_history = [
         {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": events_summary},
         {"role": "assistant", "content": welcome_message},
     ]
     cl.user_session.set("message_history", message_history)
     cl.user_session.set("current_entry", None)
-
-    # Create calendar index to load events
-    await create_calendar_index()  # Call to fetch and index calendar events
 
 
 def generate_unique_filename():
@@ -142,6 +219,7 @@ async def generate_journal_entry(prompt: str) -> str:
 async def on_message(message: cl.Message):
     message_history = cl.user_session.get("message_history", [])
     current_entry = cl.user_session.get("current_entry")
+    calendar_index = cl.user_session.get("calendar_index")
 
     # Check if the message is a system message for loading an entry
     if message.type == "system_message":
@@ -177,6 +255,52 @@ async def on_message(message: cl.Message):
     # Add user message to history
     message_history.append({"role": "user", "content": message.content})
 
+    # Query the calendar index for relevant events if available
+    if calendar_index:
+        try:
+            query_engine = calendar_index.as_query_engine()
+            query_result = query_engine.query(message.content)
+
+            # Add relevant calendar information to the message history
+            if query_result.response:
+                message_history.append(
+                    {
+                        "role": "system",
+                        "content": f"Relevant calendar information: {query_result.response}",
+                    }
+                )
+        except Exception as e:
+            print(f"Error querying calendar index: {e}")
+            message_history.append(
+                {
+                    "role": "system",
+                    "content": "I'm having trouble accessing your calendar information at the moment.",
+                }
+            )
+
+            # Add a button for re-authentication when there's an error
+            actions = [
+                cl.Action(name="reauth", value="reauth", label="Re-authenticate")
+            ]
+            await cl.Message(
+                content="There seems to be an issue with your calendar access. Would you like to re-authenticate?",
+                actions=actions,
+            ).send()
+    else:
+        message_history.append(
+            {
+                "role": "system",
+                "content": "Calendar information is currently unavailable.",
+            }
+        )
+
+        # Add a button for re-authentication when calendar index is not available
+        actions = [cl.Action(name="reauth", value="reauth", label="Re-authenticate")]
+        await cl.Message(
+            content="Calendar information is unavailable. Would you like to re-authenticate?",
+            actions=actions,
+        ).send()
+
     response_message = cl.Message(content="")
 
     full_response = ""
@@ -199,6 +323,11 @@ async def on_message(message: cl.Message):
                 name="update_journal", args={"filename": updated_filename}
             )
             await fn.acall()
+
+
+@cl.action_callback("reauth")
+async def on_action(action):
+    await handle_reauth()
 
 
 # Update this function to handle journal updates for a specific entry

@@ -6,144 +6,159 @@ from prompts import SYSTEM_PROMPT, JOURNAL_PROMPT
 from custom_calendar_reader import GoogleCalendarReader
 from langsmith.wrappers import wrap_openai
 from llama_index.core import VectorStoreIndex, Document
-from llama_index.core.retrievers import VectorIndexRetriever
-from typing import Dict, List
+from typing import Dict, List, Tuple
 import os
 import json
-from datetime import date
-from flask import Flask, jsonify, send_file
-import markdown
+from google.auth.exceptions import RefreshError
 import re
 
 # Load environment variables
 load_dotenv()
 
 # Configuration
-configurations = {
-    "mistral_7B_instruct": {
-        "endpoint_url": os.getenv("MISTRAL_7B_INSTRUCT_ENDPOINT"),
-        "api_key": os.getenv("RUNPOD_API_KEY"),
-        "model": "mistralai/Mistral-7B-Instruct-v0.2",
-    },
-    "mistral_7B": {
-        "endpoint_url": os.getenv("MISTRAL_7B_ENDPOINT"),
-        "api_key": os.getenv("RUNPOD_API_KEY"),
-        "model": "mistralai/Mistral-7B-v0.1",
-    },
-    "openai_gpt-4": {
-        "endpoint_url": os.getenv("OPENAI_ENDPOINT"),
-        "api_key": os.getenv("OPENAI_API_KEY"),
-        "model": "gpt-4o-mini",
-    },
+openai_config = {
+    "endpoint_url": os.getenv("OPENAI_ENDPOINT"),
+    "api_key": os.getenv("OPENAI_API_KEY"),
+    "model": "gpt-4o-mini",
 }
 
-CONFIG_KEY = "openai_gpt-4"
-ENABLE_SYSTEM_PROMPT = True
-
 # Initialize services
-config = configurations[CONFIG_KEY]
 client = wrap_openai(
-    openai.AsyncClient(api_key=config["api_key"], base_url=config["endpoint_url"])
+    openai.AsyncClient(
+        api_key=openai_config["api_key"], base_url=openai_config["endpoint_url"]
+    )
 )
 calendar_reader = GoogleCalendarReader()
 
 
 async def create_calendar_index():
-    calendar_events = await fetch_calendar_events()
-    documents = [
-        Document(text=event, metadata={"source": "calendar"})
-        for event in calendar_events
-    ]
-    index = VectorStoreIndex.from_documents(documents)
-    return index
+    try:
+        all_events, todays_events = await fetch_and_filter_calendar_events()
+        documents = [
+            Document(text=event, metadata={"source": "calendar"})
+            for event in all_events
+        ]
+        index = VectorStoreIndex.from_documents(documents)
+        return index, todays_events
+    except RefreshError as e:
+        print(f"Error refreshing Google Calendar token: {e}")
+        return None, []
 
 
 # Helper functions
-async def fetch_calendar_events() -> List[str]:
+async def fetch_and_filter_calendar_events() -> Tuple[List[str], List[str]]:
     today = datetime.date.today()
     start_of_week = today - datetime.timedelta(days=today.weekday())
-    calendar_documents = calendar_reader.load_data(
-        number_of_results=100,
-        start_date=start_of_week,
-        local_data_filename=os.getenv("GCAL_TEST_DATAFILE"),
-    )
-    return [event.text for event in calendar_documents]
+    try:
+        calendar_documents = calendar_reader.load_data(
+            number_of_results=100,
+            start_date=start_of_week,
+            local_data_filename=os.getenv("GCAL_TEST_DATAFILE"),
+        )
+        all_events = [event.text for event in calendar_documents]
+        todays_events = []
+        for event in calendar_documents:
+            start_time_match = re.search(r"Start time: (\S+)", event.text)
+            if start_time_match:
+                start_time_str = start_time_match.group(1).rstrip(",")
+                try:
+                    start_time = datetime.datetime.fromisoformat(start_time_str)
+                    if start_time.date() == today:
+                        todays_events.append(event.text)
+                except ValueError as e:
+                    print(f"Error parsing date for event: {event.text}. Error: {e}")
+        return all_events, todays_events[:10]
+    except RefreshError as e:
+        print(f"Error refreshing Google Calendar token: {e}")
+        raise
+    except Exception as e:
+        print(f"Error fetching calendar events: {e}")
+        return [], []
 
 
 async def generate_response(message_history: List[Dict[str, str]]) -> str:
-    gen_kwargs = {"model": config["model"], "temperature": 0.3, "max_tokens": 500}
+    gen_kwargs = {
+        "model": openai_config["model"],
+        "temperature": 0.3,
+        "max_tokens": 500,
+    }
 
-    if CONFIG_KEY == "mistral_7B":
-        stream = await client.completions.create(
-            prompt=message_history[-1]["content"], stream=True, **gen_kwargs
-        )
-    else:
-        stream = await client.chat.completions.create(
-            messages=message_history, stream=True, **gen_kwargs
-        )
+    stream = await client.chat.completions.create(
+        messages=message_history, stream=True, **gen_kwargs
+    )
 
     response_content = ""
     async for part in stream:
-        token = (
-            part.choices[0].text
-            if CONFIG_KEY == "mistral_7B"
-            else part.choices[0].delta.content
-        )
+        token = part.choices[0].delta.content
         if token:
             response_content += token
             yield token
 
 
-async def fetch_todays_events() -> List[str]:
-    today = datetime.date.today()
-    calendar_documents = calendar_reader.load_data(
-        number_of_results=10, start_date=today, end_date=today
-    )
-    return [event.text for event in calendar_documents]
+# Add this new function to handle re-authentication
+async def handle_reauth():
+    token_path = "token.json"
+    if os.path.exists(token_path):
+        os.remove(token_path)
+        print(f"Deleted {token_path}")
+
+    await cl.Message(
+        content="The old token has been removed. Please restart the application to re-authenticate."
+    ).send()
+
+    # Reinitialize the calendar reader
+    global calendar_reader
+    calendar_reader = GoogleCalendarReader()
+
+    # Attempt to fetch calendar events to trigger the authentication flow
+    try:
+        await fetch_and_filter_calendar_events()
+        await cl.Message(
+            content="Re-authentication successful. You can now use calendar features."
+        ).send()
+    except Exception as e:
+        print(f"Error during re-authentication: {e}")
+        await cl.Message(
+            content="There was an error during re-authentication. Please check the console and ensure you've granted the necessary permissions."
+        ).send()
 
 
 @cl.on_chat_start
 async def on_chat_start():
-    today = datetime.date.today()
     welcome_message = "Hi there! I'm here to help you with your journal entries."
     await cl.Message(content=welcome_message).send()
 
-    # Initialize message history
+    # Create calendar index and fetch today's events
+    calendar_index, todays_events = await create_calendar_index()
+    if calendar_index is None:
+        await cl.Message(
+            content="I'm having trouble accessing your calendar. You may need to re-authenticate."
+        ).send()
+
+        # Add a button for re-authentication
+        actions = [cl.Action(name="reauth", value="reauth", label="Re-authenticate")]
+        await cl.Message(
+            content="Click the button below to re-authenticate:", actions=actions
+        ).send()
+    else:
+        # Inform the user about the number of events loaded
+        total_events = len(calendar_index.docstore.docs)
+        today_event_count = len(todays_events)
+        await cl.Message(
+            content=f"I've successfully loaded {total_events} events from your calendar. You have {today_event_count} event(s) scheduled for today."
+        ).send()
+
+    cl.user_session.set("calendar_index", calendar_index)
+
+    # Initialize message history with system prompt and today's events (without displaying them)
+    events_summary = f"Today's events: {len(todays_events)}"
     message_history = [
         {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": events_summary},
         {"role": "assistant", "content": welcome_message},
     ]
     cl.user_session.set("message_history", message_history)
     cl.user_session.set("current_entry", None)
-
-    # Create calendar index to load events
-    await create_calendar_index()  # Call to fetch and index calendar events
-
-
-def format_event(event):
-    import re
-    from datetime import datetime
-
-    print(f"format event: {event}")
-    summary_match = re.search(r"Summary: (.+?),", event)
-    print(f"summary match: {summary_match}")
-
-    start_time_match = re.search(r"Start time: (.+?)[,+]", event)
-    print(f"start time match: {start_time_match}")
-    end_time_match = re.search(r"End time: (.+?)[,+]", event)
-    print(f"end time match: {start_time_match}")
-
-    if summary_match and start_time_match and end_time_match:
-        summary = summary_match.group(1)
-        start_time = datetime.fromisoformat(start_time_match.group(1))
-        end_time = datetime.fromisoformat(end_time_match.group(1))
-
-        formatted_time = (
-            f"{start_time.strftime('%I:%M %p')} - {end_time.strftime('%I:%M %p')}"
-        )
-        return f"- {summary} ({formatted_time})"
-    else:
-        return "- Unable to parse event details"
 
 
 def generate_unique_filename():
@@ -152,7 +167,6 @@ def generate_unique_filename():
     return f"{today}-{timestamp}-entry.md"
 
 
-# Update this function to handle journal updates
 async def update_journal_file(message_history: List[Dict[str, str]]):
     filename = generate_unique_filename()
     file_path = os.path.join("data", filename)
@@ -175,16 +189,16 @@ async def update_journal_file(message_history: List[Dict[str, str]]):
 
 
 async def generate_journal_entry(prompt: str) -> str:
-    gen_kwargs = {"model": config["model"], "temperature": 0.7, "max_tokens": 1000}
+    gen_kwargs = {
+        "model": openai_config["model"],
+        "temperature": 0.7,
+        "max_tokens": 1000,
+    }
 
-    if CONFIG_KEY == "mistral_7B":
-        response = await client.completions.create(prompt=prompt, **gen_kwargs)
-        journal_entry = response.choices[0].text
-    else:
-        response = await client.chat.completions.create(
-            messages=[{"role": "user", "content": prompt}], **gen_kwargs
-        )
-        journal_entry = response.choices[0].message.content
+    response = await client.chat.completions.create(
+        messages=[{"role": "user", "content": prompt}], **gen_kwargs
+    )
+    journal_entry = response.choices[0].message.content
 
     return journal_entry
 
@@ -193,6 +207,7 @@ async def generate_journal_entry(prompt: str) -> str:
 async def on_message(message: cl.Message):
     message_history = cl.user_session.get("message_history", [])
     current_entry = cl.user_session.get("current_entry")
+    calendar_index = cl.user_session.get("calendar_index")
 
     # Check if the message is a system message for loading an entry
     if message.type == "system_message":
@@ -228,6 +243,52 @@ async def on_message(message: cl.Message):
     # Add user message to history
     message_history.append({"role": "user", "content": message.content})
 
+    # Query the calendar index for relevant events if available
+    if calendar_index:
+        try:
+            query_engine = calendar_index.as_query_engine()
+            query_result = query_engine.query(message.content)
+
+            # Add relevant calendar information to the message history
+            if query_result.response:
+                message_history.append(
+                    {
+                        "role": "system",
+                        "content": f"Relevant calendar information: {query_result.response}",
+                    }
+                )
+        except Exception as e:
+            print(f"Error querying calendar index: {e}")
+            message_history.append(
+                {
+                    "role": "system",
+                    "content": "I'm having trouble accessing your calendar information at the moment.",
+                }
+            )
+
+            # Add a button for re-authentication when there's an error
+            actions = [
+                cl.Action(name="reauth", value="reauth", label="Re-authenticate")
+            ]
+            await cl.Message(
+                content="There seems to be an issue with your calendar access. Would you like to re-authenticate?",
+                actions=actions,
+            ).send()
+    else:
+        message_history.append(
+            {
+                "role": "system",
+                "content": "Calendar information is currently unavailable.",
+            }
+        )
+
+        # Add a button for re-authentication when calendar index is not available
+        actions = [cl.Action(name="reauth", value="reauth", label="Re-authenticate")]
+        await cl.Message(
+            content="Calendar information is unavailable. Would you like to re-authenticate?",
+            actions=actions,
+        ).send()
+
     response_message = cl.Message(content="")
 
     full_response = ""
@@ -252,6 +313,11 @@ async def on_message(message: cl.Message):
             await fn.acall()
 
 
+@cl.action_callback("reauth")
+async def on_action(action):
+    await handle_reauth()
+
+
 # Update this function to handle journal updates for a specific entry
 async def update_journal_file(filename: str, message_history: List[Dict[str, str]]):
     file_path = os.path.join("data", filename)
@@ -271,75 +337,3 @@ async def update_journal_file(filename: str, message_history: List[Dict[str, str
         f.write(journal_entry.strip())
 
     return filename
-
-
-app = Flask(__name__, static_folder="static")
-
-
-@app.route("/api/journal-entries")
-def get_journal_entries():
-    entries = []
-    for filename in os.listdir("data"):
-        if filename.endswith(".md"):
-            file_path = os.path.join("data", filename)
-            with open(file_path, "r") as f:
-                content = f.read().split("\n")
-                title = content[0].strip("# ")  # Remove Markdown heading syntax
-                body = content[1] if len(content) > 1 else ""
-                date_str = filename.split("-")[:3]
-                date = "-".join(date_str[:3])  # Keep as YYYY-MM-DD
-                preview = body[:100] + "..." if len(body) > 100 else body
-                entries.append(
-                    {
-                        "date": date,
-                        "title": title,
-                        "preview": preview,
-                        "filename": filename,
-                    }
-                )
-    return jsonify(sorted(entries, key=lambda x: x["filename"], reverse=True))
-
-
-@app.route("/api/journal-entry/<filename>")
-def get_journal_entry(filename):
-    file_path = os.path.join("data", filename)
-    if os.path.exists(file_path):
-        with open(file_path, "r") as f:
-            content = f.read()
-            html_content = markdown.markdown(content)
-            return html_content
-    return "Entry not found", 404
-
-
-@app.route("/api/new-entry", methods=["POST"])
-def create_new_entry():
-    filename = generate_unique_filename()
-    title = f"Today, ..."
-    file_path = os.path.join("data", filename)
-
-    # Create a new entry file
-    with open(file_path, "w") as f:
-        f.write(f"# {title}\n\n")
-
-    return jsonify(
-        {
-            "filename": filename,
-            "title": title,
-            "date": filename.split("-")[0],
-            "preview": "",
-        }
-    )
-
-
-@app.route("/")
-def serve_journal():
-    return send_file("journal.html")
-
-
-@app.route("/static/<path:path>")
-def serve_static(path):
-    return send_from_directory("static", path)
-
-
-if __name__ == "__main__":
-    app.run(debug=True)

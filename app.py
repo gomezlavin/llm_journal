@@ -1,6 +1,7 @@
 import chainlit as cl
 import openai
 import datetime
+import asyncio
 from dotenv import load_dotenv
 from prompts import SYSTEM_PROMPT, JOURNAL_PROMPT
 from custom_calendar_reader import GoogleCalendarReader
@@ -14,6 +15,16 @@ import re
 
 # Load environment variables
 load_dotenv()
+
+from langfuse.decorators import observe
+from langfuse.openai import AsyncOpenAI
+from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
+
+from journal_functions import (
+    get_top_news,
+    journal_search
+)
+function_names = ["get_top_news","journal_search"]
 
 # Configuration
 openai_config = {
@@ -76,23 +87,36 @@ async def fetch_and_filter_calendar_events() -> Tuple[List[str], List[str]]:
         return [], []
 
 
-async def generate_response(message_history: List[Dict[str, str]]) -> str:
+# async def generate_response(message_history: List[Dict[str, str]]) -> str:
+#     gen_kwargs = {
+#         "model": openai_config["model"],
+#         "temperature": 0.3,
+#         "max_tokens": 500,
+#     }
+
+#     stream = await client.chat.completions.create(
+#         messages=message_history, stream=True, **gen_kwargs
+#     )
+
+#     response_content = ""
+#     async for part in stream:
+#         token = part.choices[0].delta.content
+#         if token:
+#             response_content += token
+#             yield token
+
+@observe
+async def generate_response(message_history):
     gen_kwargs = {
         "model": openai_config["model"],
         "temperature": 0.3,
         "max_tokens": 500,
     }
 
-    stream = await client.chat.completions.create(
-        messages=message_history, stream=True, **gen_kwargs
-    )
+    response = await client.chat.completions.create(messages=message_history, **gen_kwargs)
+    response_text = response.choices[0].message.content
 
-    response_content = ""
-    async for part in stream:
-        token = part.choices[0].delta.content
-        if token:
-            response_content += token
-            yield token
+    return response_text
 
 
 # Add this new function to handle re-authentication
@@ -160,6 +184,52 @@ async def on_chat_start():
     cl.user_session.set("message_history", message_history)
     cl.user_session.set("current_entry", None)
 
+def extract_json_from_response(text):
+    # Regex pattern to find JSON block enclosed in ```json ... ```
+    json_pattern = r'```json(.*?)```'
+    
+    # Search for the JSON block in the response
+    json_match = re.search(json_pattern, text, re.DOTALL)
+    
+    if json_match:
+        json_str = json_match.group(1).strip()  # Extract the JSON block
+        try:
+            parsed_json = json.loads(json_str)  # Parse the JSON block
+            return parsed_json
+        except json.JSONDecodeError as e:
+            return None
+    else:
+        return None
+    
+@observe
+async def print_response(response_text):
+    if not isinstance(response_text, str):
+        response_text = str(response_text)  # Ensure it's a string
+    
+    tokens = re.split(r'(\s+)', response_text)  # Splitting while keeping whitespace
+
+    response_message = cl.Message(content="")
+    await response_message.send()
+
+    for token in tokens:
+        await response_message.stream_token(token)
+        await asyncio.sleep(0.02)  # Delay of x seconds between each token
+
+    await response_message.update()
+
+    return response_message
+
+@observe
+async def call_function(function_json):
+    if function_json["function_name"] == "get_top_news":
+        response = get_top_news()
+    elif function_json["function_name"] == "journal_search":
+        journal_response = journal_search(function_json["params"]["query"])
+        response = str(journal_response.response)
+    else:
+        response = "Invalid function"
+    
+    return response
 
 def generate_unique_filename():
     today = datetime.datetime.now().strftime("%Y-%m-%d")
@@ -289,16 +359,35 @@ async def on_message(message: cl.Message):
             actions=actions,
         ).send()
 
-    response_message = cl.Message(content="")
+    # response_message = cl.Message(content="")
 
-    full_response = ""
-    async for token in generate_response(message_history):
-        full_response += token
-        await response_message.stream_token(token)
+    # full_response = ""
+    # async for token in generate_response(message_history):
+    #     full_response += token
+    #     await response_message.stream_token(token)
 
-    await response_message.update()
+    # await response_message.update()
 
-    message_history.append({"role": "assistant", "content": full_response})
+    response_text = await generate_response(message_history)
+
+    try:
+        parsed_json = extract_json_from_response(response_text)
+        
+        if parsed_json and "function_name" in parsed_json and parsed_json["function_name"] in function_names:
+            matched_function = parsed_json["function_name"]
+            print(f"Matched function: {matched_function}")
+            
+            function_response = await call_function(parsed_json)
+            message_history.append({"role": "system", "content": function_response})
+            print(f"Function response: {function_response}")
+            response_text = await generate_response(message_history)
+            print(f"Generate response: {response_text}")
+
+    except json.JSONDecodeError as e:
+        print(f"JSONDecodeError: {e}")
+
+    response_message = await print_response(response_text)
+    message_history.append({"role": "assistant", "content": response_text})
     cl.user_session.set("message_history", message_history)
 
     # Only update the current journal entry if one is loaded

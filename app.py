@@ -20,6 +20,10 @@ from langfuse.decorators import observe
 from langfuse.openai import AsyncOpenAI
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
 
+from journal_functions import (
+    get_top_news,
+    journal_search
+)
 function_names = ["get_top_news","journal_search"]
 
 # Configuration
@@ -364,10 +368,26 @@ async def on_message(message: cl.Message):
 
     # await response_message.update()
 
-    full_response = await generate_response(message_history)
-    response_message = await print_response(full_response)
+    response_text = await generate_response(message_history)
 
-    message_history.append({"role": "assistant", "content": full_response})
+    try:
+        parsed_json = extract_json_from_response(response_text)
+        
+        if parsed_json and "function_name" in parsed_json and parsed_json["function_name"] in function_names:
+            matched_function = parsed_json["function_name"]
+            print(f"Matched function: {matched_function}")
+            
+            function_response = await call_function(parsed_json)
+            message_history.append({"role": "system", "content": function_response})
+            print(f"Function response: {function_response}")
+            response_text = await generate_response(message_history)
+            print(f"Generate response: {response_text}")
+
+    except json.JSONDecodeError as e:
+        print(f"JSONDecodeError: {e}")
+
+    response_message = await print_response(response_text)
+    message_history.append({"role": "assistant", "content": response_text})
     cl.user_session.set("message_history", message_history)
 
     # Only update the current journal entry if one is loaded

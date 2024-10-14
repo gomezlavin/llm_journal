@@ -22,9 +22,10 @@ from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
 
 from journal_functions import (
     get_top_news,
-    journal_search
+    journal_search,
+    calendar_search
 )
-function_names = ["get_top_news","journal_search"]
+function_names = ["get_top_news","journal_search", "calendar_search"]
 
 # Configuration
 openai_config = {
@@ -85,25 +86,6 @@ async def fetch_and_filter_calendar_events() -> Tuple[List[str], List[str]]:
     except Exception as e:
         print(f"Error fetching calendar events: {e}")
         return [], []
-
-
-# async def generate_response(message_history: List[Dict[str, str]]) -> str:
-#     gen_kwargs = {
-#         "model": openai_config["model"],
-#         "temperature": 0.3,
-#         "max_tokens": 500,
-#     }
-
-#     stream = await client.chat.completions.create(
-#         messages=message_history, stream=True, **gen_kwargs
-#     )
-
-#     response_content = ""
-#     async for part in stream:
-#         token = part.choices[0].delta.content
-#         if token:
-#             response_content += token
-#             yield token
 
 @observe
 async def generate_response(message_history):
@@ -222,10 +204,13 @@ async def print_response(response_text):
 @observe
 async def call_function(function_json):
     if function_json["function_name"] == "get_top_news":
-        response = get_top_news()
+        response = await get_top_news()
     elif function_json["function_name"] == "journal_search":
-        journal_response = journal_search(function_json["params"]["query"])
+        journal_response = await journal_search(function_json["params"]["query"])
         response = str(journal_response.response)
+    elif function_json["function_name"] == "calendar_search":
+        calendar_response = await calendar_search(function_json["params"]["query"])
+        response = str(calendar_response)
     else:
         response = "Invalid function"
     
@@ -281,6 +266,7 @@ async def on_message(message: cl.Message):
 
     # Check if the message is a system message for loading an entry
     if message.type == "system_message":
+        print("1. System message")
         try:
             data = json.loads(message.content)
             if data.get("action") == "load_entry":
@@ -313,63 +299,10 @@ async def on_message(message: cl.Message):
     # Add user message to history
     message_history.append({"role": "user", "content": message.content})
 
-    # Query the calendar index for relevant events if available
-    if calendar_index:
-        try:
-            query_engine = calendar_index.as_query_engine()
-            query_result = query_engine.query(message.content)
-
-            # Add relevant calendar information to the message history
-            if query_result.response:
-                message_history.append(
-                    {
-                        "role": "system",
-                        "content": f"Relevant calendar information: {query_result.response}",
-                    }
-                )
-        except Exception as e:
-            print(f"Error querying calendar index: {e}")
-            message_history.append(
-                {
-                    "role": "system",
-                    "content": "I'm having trouble accessing your calendar information at the moment.",
-                }
-            )
-
-            # Add a button for re-authentication when there's an error
-            actions = [
-                cl.Action(name="reauth", value="reauth", label="Re-authenticate")
-            ]
-            await cl.Message(
-                content="There seems to be an issue with your calendar access. Would you like to re-authenticate?",
-                actions=actions,
-            ).send()
-    else:
-        message_history.append(
-            {
-                "role": "system",
-                "content": "Calendar information is currently unavailable.",
-            }
-        )
-
-        # Add a button for re-authentication when calendar index is not available
-        actions = [cl.Action(name="reauth", value="reauth", label="Re-authenticate")]
-        await cl.Message(
-            content="Calendar information is unavailable. Would you like to re-authenticate?",
-            actions=actions,
-        ).send()
-
-    # response_message = cl.Message(content="")
-
-    # full_response = ""
-    # async for token in generate_response(message_history):
-    #     full_response += token
-    #     await response_message.stream_token(token)
-
-    # await response_message.update()
-
     response_text = await generate_response(message_history)
 
+    print("Response text")
+    print(response_text)
     try:
         parsed_json = extract_json_from_response(response_text)
         

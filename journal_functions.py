@@ -1,14 +1,16 @@
 import os
 import requests
+import chainlit as cl
+import asyncio
 from serpapi import GoogleSearch
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
 
-def get_top_news():
+async def get_top_news():
     # Set up parameters for the API call
     params = {
         "api_key": os.getenv('SERP_API_KEY'),
         "engine": "google",
-        "q": "top stories",
+        "q": "top news articles",
         "google_domain": "google.com",
         "gl": "us",
         "hl": "en",
@@ -43,7 +45,7 @@ def get_top_news():
     # Return the formatted news headlines
     return formatted_news
 
-def journal_search(query):
+async def journal_search(query):
     documents = SimpleDirectoryReader("data").load_data()
 
     # Create an index from the documents
@@ -55,5 +57,44 @@ def journal_search(query):
     # Example query
     response = query_engine.query(query)
     print(response)
+
+    return response
+
+async def calendar_search(query):
+    calendar_index = cl.user_session.get("calendar_index")
+    response = "Calendar information is currently unavailable."
+
+    if calendar_index:
+        print("2a. Calendar index")
+        try:
+            query_engine = calendar_index.as_query_engine()
+            query_result = query_engine.query(query)
+
+            response = query_result
+            print("respnse from calendar_search")
+            print(response)
+            if query_result.response:
+                response = f"Relevant calendar information: {query_result.response}"
+        except Exception as e:
+            print(f"Error querying calendar index: {e}")
+            response = "I'm having trouble accessing your calendar information at the moment."
+
+            # Add a button for re-authentication when there's an error
+            actions = [
+                cl.Action(name="reauth", value="reauth", label="Re-authenticate")
+            ]
+            await cl.Message(
+                content="There seems to be an issue with your calendar access. Would you like to re-authenticate?",
+                actions=actions,
+            ).send()
+    else:
+        print("2b. Not calendar index")
+
+    # Add a button for re-authentication when calendar index is not available
+    actions = [cl.Action(name="reauth", value="reauth", label="Re-authenticate")]
+    await cl.Message(
+        content="Calendar information is unavailable. Would you like to re-authenticate?",
+        actions=actions,
+    ).send()
 
     return response

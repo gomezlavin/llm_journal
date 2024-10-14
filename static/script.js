@@ -126,8 +126,12 @@ function debounce(func, delay) {
 }
 
 // Load entries when the page loads
-window.addEventListener("load", () => {
+window.addEventListener("load", async () => {
   loadJournalEntries();
+
+  // Fetch and display calendar events
+  const calendarEvents = await fetchCalendarEvents();
+  updateCalendarSidebar(calendarEvents.todays_events);
 
   // Add event listener for the new entry button
   const newEntryBtn = document.getElementById("new-entry-btn");
@@ -137,10 +141,16 @@ window.addEventListener("load", () => {
   const editorContent = document.getElementById("editor-content");
   editorContent.addEventListener("focus", handleEditorFocus);
 
-  // Mount Chainlit widget and open it
+  // Mount Chainlit widget with updated configuration
   window.mountChainlitWidget({
     chainlitServer: "http://localhost:8000",
-    autoOpen: true, // This will open the widget when the page loads
+    button: {
+      style: {
+        bgcolor: "#ffffff",
+        color: "#000000",
+        borderColor: "#e0e0e0",
+      },
+    },
   });
 
   // Send the current filename to Chainlit when the widget is ready
@@ -182,11 +192,6 @@ window.addEventListener("chainlit-call-fn", (e) => {
 });
 
 // Remove the old chainlit-message event listener as it's no longer needed
-
-// Mount Chainlit widget
-window.mountChainlitWidget({
-  chainlitServer: "http://localhost:8000",
-});
 
 // Function to create a new entry
 async function createNewEntry() {
@@ -240,4 +245,28 @@ async function reloadCurrentJournalEntry() {
       console.error("Error reloading journal entry:", error);
     }
   }
+}
+
+// Function to fetch calendar events
+async function fetchCalendarEvents() {
+  try {
+    const response = await fetch("/api/calendar-events");
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error("Error fetching calendar events:", error);
+    return { all_events: [], todays_events: [] };
+  }
+}
+
+// Function to update the sidebar with calendar events
+function updateCalendarSidebar(events) {
+  const eventList = document.getElementById("event-list");
+  eventList.innerHTML = ""; // Clear existing events
+
+  events.forEach((event) => {
+    const li = document.createElement("li");
+    li.textContent = event;
+    eventList.appendChild(li);
+  });
 }

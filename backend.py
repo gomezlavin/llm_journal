@@ -4,6 +4,7 @@ import markdown
 from datetime import datetime
 import re
 import html2text
+from calendar_utils import fetch_and_filter_calendar_events
 
 app = Flask(__name__, static_folder="static")
 
@@ -97,6 +98,15 @@ def update_entry(filename):
         f.write(content)
 
     return jsonify({"message": "Entry updated successfully"})
+
+
+@app.route("/api/calendar-events")
+def get_calendar_events():
+    try:
+        all_events, todays_events = fetch_and_filter_calendar_events()
+        return jsonify({"all_events": all_events, "todays_events": todays_events})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":

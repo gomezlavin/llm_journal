@@ -87,25 +87,6 @@ async def fetch_and_filter_calendar_events() -> Tuple[List[str], List[str]]:
         print(f"Error fetching calendar events: {e}")
         return [], []
 
-
-# async def generate_response(message_history: List[Dict[str, str]]) -> str:
-#     gen_kwargs = {
-#         "model": openai_config["model"],
-#         "temperature": 0.3,
-#         "max_tokens": 500,
-#     }
-
-#     stream = await client.chat.completions.create(
-#         messages=message_history, stream=True, **gen_kwargs
-#     )
-
-#     response_content = ""
-#     async for part in stream:
-#         token = part.choices[0].delta.content
-#         if token:
-#             response_content += token
-#             yield token
-
 @observe
 async def generate_response(message_history):
     gen_kwargs = {
@@ -317,66 +298,6 @@ async def on_message(message: cl.Message):
 
     # Add user message to history
     message_history.append({"role": "user", "content": message.content})
-
-    #------
-    # # Query the calendar index for relevant events if available
-    # if calendar_index:
-    #     print("2a. Calendar index")
-    #     try:
-    #         query_engine = calendar_index.as_query_engine()
-    #         query_result = query_engine.query(message.content)
-
-    #         # Add relevant calendar information to the message history
-    #         if query_result.response:
-    #             message_history.append(
-    #                 {
-    #                     "role": "system",
-    #                     "content": f"Relevant calendar information: {query_result.response}",
-    #                 }
-    #             )
-    #     except Exception as e:
-    #         print(f"Error querying calendar index: {e}")
-    #         message_history.append(
-    #             {
-    #                 "role": "system",
-    #                 "content": "I'm having trouble accessing your calendar information at the moment.",
-    #             }
-    #         )
-
-    #         # Add a button for re-authentication when there's an error
-    #         actions = [
-    #             cl.Action(name="reauth", value="reauth", label="Re-authenticate")
-    #         ]
-    #         await cl.Message(
-    #             content="There seems to be an issue with your calendar access. Would you like to re-authenticate?",
-    #             actions=actions,
-    #         ).send()
-    # else:
-    #     print("2b. Not calendar index")
-    #     message_history.append(
-    #         {
-    #             "role": "system",
-    #             "content": "Calendar information is currently unavailable.",
-    #         }
-    #     )
-
-    #     # Add a button for re-authentication when calendar index is not available
-    #     actions = [cl.Action(name="reauth", value="reauth", label="Re-authenticate")]
-    #     await cl.Message(
-    #         content="Calendar information is unavailable. Would you like to re-authenticate?",
-    #         actions=actions,
-    #     ).send()
-    
-    #------
-
-    # response_message = cl.Message(content="")
-
-    # full_response = ""
-    # async for token in generate_response(message_history):
-    #     full_response += token
-    #     await response_message.stream_token(token)
-
-    # await response_message.update()
 
     response_text = await generate_response(message_history)
 

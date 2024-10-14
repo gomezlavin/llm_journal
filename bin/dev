@@ -1,13 +1,22 @@
 #!/usr/bin/env bash
 
+# Determine which Procfile to use
+if [ "$1" = "local" ]; then
+    PROCFILE="Procfile.local"
+    echo "Running in local mode with Ollama..."
+else
+    PROCFILE="Procfile"
+    echo "Running in standard mode with OpenAI..."
+fi
+
 # Check if Foreman is installed
 if command -v foreman &> /dev/null; then
     echo "Running with Foreman..."
-    exec foreman start -f Procfile
+    exec foreman start -f $PROCFILE
 # Check if Honcho is installed
 elif command -v honcho &> /dev/null; then
     echo "Running with Honcho..."
-    exec honcho start
+    exec honcho start -f $PROCFILE
 else
     echo "Error: Neither Foreman nor Honcho is installed."
     echo "Please install one of them:"

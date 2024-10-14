@@ -1,0 +1,3 @@
+web: OLLAMA=1 gunicorn --reload backend:app -b 0.0.0.0:5001
+chainlit: OLLAMA=1 chainlit run app.py -h -w
+

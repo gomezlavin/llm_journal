@@ -20,25 +20,37 @@ from langfuse.decorators import observe
 from langfuse.openai import AsyncOpenAI
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
 
-from journal_functions import (
-    get_top_news,
-    journal_search,
-    calendar_search
-)
-function_names = ["get_top_news","journal_search", "calendar_search"]
+from journal_functions import get_top_news, journal_search, calendar_search
+
+function_names = ["get_top_news", "journal_search", "calendar_search"]
 
 # Configuration
 openai_config = {
     "endpoint_url": os.getenv("OPENAI_ENDPOINT"),
     "api_key": os.getenv("OPENAI_API_KEY"),
-    "model": "gpt-4o-mini",
+    "model": "gpt-4o",
 }
 
+ollama_config = {
+    "endpoint_url": os.getenv("OLLAMA_ENDPOINT", "http://localhost:11434/v1"),
+    "api_key": "ollama",  # Ollama doesn't require an API key, but we need to provide something
+    "model": os.getenv("OLLAMA_MODEL", "llama3.2"),
+}
+
+# Choose AI provider (set this to 'ollama' or 'openai')
+ai_provider = "ollama" if os.getenv("OLLAMA") == "1" else "openai"
+
+# You can also add a print statement for debugging:
+print(f"AI Provider: {ai_provider}")
+
 # Initialize services
+if ai_provider == "openai":
+    config = openai_config
+else:
+    config = ollama_config
+
 client = wrap_openai(
-    openai.AsyncClient(
-        api_key=openai_config["api_key"], base_url=openai_config["endpoint_url"]
-    )
+    openai.AsyncClient(api_key=config["api_key"], base_url=config["endpoint_url"])
 )
 calendar_reader = GoogleCalendarReader()
 
@@ -87,15 +99,18 @@ async def fetch_and_filter_calendar_events() -> Tuple[List[str], List[str]]:
         print(f"Error fetching calendar events: {e}")
         return [], []
 
+
 @observe
 async def generate_response(message_history):
     gen_kwargs = {
-        "model": openai_config["model"],
+        "model": config["model"],
         "temperature": 0.3,
         "max_tokens": 500,
     }
 
-    response = await client.chat.completions.create(messages=message_history, **gen_kwargs)
+    response = await client.chat.completions.create(
+        messages=message_history, **gen_kwargs
+    )
     response_text = response.choices[0].message.content
 
     return response_text
@@ -166,13 +181,14 @@ async def on_chat_start():
     cl.user_session.set("message_history", message_history)
     cl.user_session.set("current_entry", None)
 
+
 def extract_json_from_response(text):
     # Regex pattern to find JSON block enclosed in ```json ... ```
-    json_pattern = r'```json(.*?)```'
-    
+    json_pattern = r"```json(.*?)```"
+
     # Search for the JSON block in the response
     json_match = re.search(json_pattern, text, re.DOTALL)
-    
+
     if json_match:
         json_str = json_match.group(1).strip()  # Extract the JSON block
         try:
@@ -182,13 +198,14 @@ def extract_json_from_response(text):
             return None
     else:
         return None
-    
+
+
 @observe
 async def print_response(response_text):
     if not isinstance(response_text, str):
         response_text = str(response_text)  # Ensure it's a string
-    
-    tokens = re.split(r'(\s+)', response_text)  # Splitting while keeping whitespace
+
+    tokens = re.split(r"(\s+)", response_text)  # Splitting while keeping whitespace
 
     response_message = cl.Message(content="")
     await response_message.send()
@@ -200,6 +217,7 @@ async def print_response(response_text):
     await response_message.update()
 
     return response_message
+
 
 @observe
 async def call_function(function_json):
@@ -213,8 +231,9 @@ async def call_function(function_json):
         response = str(calendar_response)
     else:
         response = "Invalid function"
-    
+
     return response
+
 
 def generate_unique_filename():
     today = datetime.datetime.now().strftime("%Y-%m-%d")
@@ -245,7 +264,7 @@ async def update_journal_file(message_history: List[Dict[str, str]]):
 
 async def generate_journal_entry(prompt: str) -> str:
     gen_kwargs = {
-        "model": openai_config["model"],
+        "model": config["model"],
         "temperature": 0.7,
         "max_tokens": 1000,
     }
@@ -305,11 +324,15 @@ async def on_message(message: cl.Message):
     print(response_text)
     try:
         parsed_json = extract_json_from_response(response_text)
-        
-        if parsed_json and "function_name" in parsed_json and parsed_json["function_name"] in function_names:
+
+        if (
+            parsed_json
+            and "function_name" in parsed_json
+            and parsed_json["function_name"] in function_names
+        ):
             matched_function = parsed_json["function_name"]
             print(f"Matched function: {matched_function}")
-            
+
             function_response = await call_function(parsed_json)
             message_history.append({"role": "system", "content": function_response})
             print(f"Function response: {function_response}")

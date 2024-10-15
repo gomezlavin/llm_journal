@@ -156,9 +156,10 @@ def get_calendar_events():
 @app.route("/api/calendar-events/<date>")
 def get_calendar_events_for_date(date):
     logging.info(f"GET /api/calendar-events/{date}")
+    force_refresh = request.args.get("force_refresh", "").lower() == "true"
     try:
-        print(f"Fetching events for date: {date}")
-        all_events, _ = fetch_and_filter_calendar_events()
+        print(f"Fetching events for date: {date}, force refresh: {force_refresh}")
+        all_events, _ = fetch_and_filter_calendar_events(force_refresh=force_refresh)
         date_events = []
         for event in all_events:
             event_date = event.split("Start time: ")[1].split("T")[0]

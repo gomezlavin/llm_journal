@@ -501,10 +501,12 @@ async function refreshEvents() {
     return;
   }
 
-  console.log(`Refreshing events for date: ${date}`); // Add this line for debugging
+  console.log(`Refreshing events for date: ${date}`);
 
   try {
-    const response = await fetch(`/api/calendar-events/${date}`);
+    const response = await fetch(
+      `/api/calendar-events/${date}?force_refresh=true`
+    );
     if (!response.ok) {
       throw new Error(`Failed to fetch events: ${response.statusText}`);
     }

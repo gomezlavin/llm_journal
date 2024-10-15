@@ -134,6 +134,9 @@ async function autoSaveEntry() {
 
     // Reload the current entry to show the updated content
     await reloadCurrentJournalEntry();
+
+    // Notify Chainlit copilot about the update
+    sendReloadMessageToChainlit(currentFilename);
   } catch (error) {
     console.error("Error auto-saving entry:", error);
     saveIndicator.textContent = "Save failed";
@@ -146,12 +149,17 @@ async function autoSaveEntry() {
   }
 }
 
-// Add this new function to send a reload message to Chainlit
+// Add this function if it doesn't exist already
 function sendReloadMessageToChainlit(filename) {
-  window.sendChainlitMessage({
-    type: "system_message",
-    output: JSON.stringify({ action: "reload_entry", filename: filename }),
-  });
+  if (window.sendChainlitMessage) {
+    window.sendChainlitMessage({
+      type: "system_message",
+      output: JSON.stringify({ action: "reload_entry", filename: filename }),
+    });
+    console.log("Sent reload message to Chainlit copilot");
+  } else {
+    console.error("sendChainlitMessage function not available");
+  }
 }
 
 // Add this new function for debounced auto-save

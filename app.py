@@ -242,7 +242,7 @@ async def on_message(message: cl.Message):
 
     # Check if the message is a system message for loading or reloading an entry
     if message.type == "system_message":
-        print("1. System message")
+        print("Received system message:", message.content)
         try:
             data = json.loads(message.content)
             if data.get("action") in ["load_entry", "reload_entry"]:
@@ -260,7 +260,7 @@ async def on_message(message: cl.Message):
                         "reloaded" if data.get("action") == "reload_entry" else "loaded"
                     )
                     await cl.Message(
-                        content=f"Journal entry '{filename}' has been {action_verb}. How can I assist you with this entry?"
+                        content=f"Journal entry '{filename}' has been {action_verb}."
                     ).send()
 
                     # Update the message history with the loaded entry

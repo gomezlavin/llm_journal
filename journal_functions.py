@@ -67,7 +67,7 @@ async def journal_search(query):
 
     # Example query
     response = query_engine.query(query)
-    print(response)
+    print(f"journal_search: {response}")
 
     return response
 
@@ -78,47 +78,26 @@ async def calendar_search(query):
     if calendar_index:
         try:
             query_engine = calendar_index.as_query_engine()
-
-            # Add debugging information
-            print(f"Query engine type: {type(query_engine)}")
-            print(f"Query: {query}")
-
             query_result = query_engine.query(query)
 
-            response = str(query_result)
+            # Format the response
+            formatted_response = (
+                f"Calendar search results for '{query}':\n\n{query_result.response}"
+            )
+
             print("Response from calendar_search:")
-            print(response)
-            return response
+            print(formatted_response)
+            return formatted_response
         except Exception as e:
             print(f"Error querying calendar index: {e}")
-            print(f"Error type: {type(e).__name__}")
-            print(f"Error details: {str(e)}")
-
             error_message = (
                 "I'm having trouble accessing your calendar information at the moment. "
                 "There might be an issue with the calendar data or the query processing."
             )
-
-            # Add a button for re-authentication when there's an error
-            actions = [
-                cl.Action(name="reauth", value="reauth", label="Re-authenticate")
-            ]
-            await cl.Message(
-                content=f"{error_message} Would you like to re-authenticate?",
-                actions=actions,
-            ).send()
             return error_message
     else:
         print("Calendar index not available")
-        error_message = "Calendar information is unavailable."
-
-        # Add a button for re-authentication when calendar index is not available
-        actions = [cl.Action(name="reauth", value="reauth", label="Re-authenticate")]
-        await cl.Message(
-            content=f"{error_message} Would you like to re-authenticate?",
-            actions=actions,
-        ).send()
-        return error_message
+        return "Calendar information is unavailable."
 
 
 # Add these configurations at the top of the file

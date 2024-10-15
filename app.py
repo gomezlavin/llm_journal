@@ -168,7 +168,7 @@ async def call_function(function_json):
         response = str(journal_response.response)
     elif function_json["function_name"] == "calendar_search":
         calendar_response = await calendar_search(function_json["params"]["query"])
-        response = str(calendar_response)
+        response = calendar_response  # Remove str() conversion
     else:
         response = "Invalid function"
 
@@ -338,10 +338,14 @@ Please update the journal entry based on the user's input and the recent convers
                 and parsed_json["function_name"] in function_names
             ):
                 function_response = await call_function(parsed_json)
+
+                # Display the function response to the user
+                await cl.Message(content=f"Function result: {function_response}").send()
+
                 message_history.append(
                     {
-                        "role": "assistant",
-                        "content": f"Function call result: {function_response}",
+                        "role": "system",
+                        "content": f"Function {parsed_json['function_name']} returned: {function_response}",
                     }
                 )
                 response_text = await generate_response(message_history)

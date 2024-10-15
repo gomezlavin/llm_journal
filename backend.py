@@ -158,28 +158,35 @@ def get_calendar_events_for_date(date):
     logging.info(f"GET /api/calendar-events/{date}")
     force_refresh = request.args.get("force_refresh", "").lower() == "true"
     try:
-        print(f"Fetching events for date: {date}, force refresh: {force_refresh}")
-        all_events, _ = fetch_and_filter_calendar_events(force_refresh=force_refresh)
+        all_events, _ = fetch_and_filter_calendar_events(
+            target_date=date, force_refresh=force_refresh
+        )
+
         date_events = []
         for event in all_events:
-            event_date = event.split("Start time: ")[1].split("T")[0]
-            if event_date == date:
-                summary = event.split("Summary: ")[1].split(",")[0]
-                start_time = event.split("Start time: ")[1].split(",")[0]
-                end_time = event.split("End time: ")[1].split(",")[0]
-                date_events.append(
-                    {
-                        "summary": summary,
-                        "start": {"dateTime": start_time},
-                        "end": {"dateTime": end_time},
-                    }
-                )
+            try:
+                event_parts = event.split(", ")
+                event_dict = {
+                    part.split(": ")[0]: ": ".join(part.split(": ")[1:])
+                    for part in event_parts
+                }
 
-        print(f"Found {len(date_events)} events for date {date}")
-        print(f"Events: {date_events}")  # Add this line for debugging
+                event_date = event_dict["Start time"].split("T")[0]
+                if event_date == date:
+                    date_events.append(
+                        {
+                            "summary": event_dict["Summary"],
+                            "start": {"dateTime": event_dict["Start time"]},
+                            "end": {"dateTime": event_dict["End time"]},
+                        }
+                    )
+            except Exception as e:
+                logging.error(f"Error processing event: {e}")
+
+        logging.info(f"Found {len(date_events)} events for date {date}")
         return jsonify(date_events)
     except Exception as e:
-        print(f"Error fetching events for date {date}: {str(e)}")
+        logging.error(f"Error fetching events for date {date}: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 

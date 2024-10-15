@@ -46,41 +46,44 @@ def save_cache(cache):
         json.dump(cache, f)
 
 
-def fetch_and_filter_calendar_events(force_refresh=False):
-    today = datetime.date.today()
-    start_of_week = today - datetime.timedelta(days=today.weekday())
+def fetch_and_filter_calendar_events(target_date=None, force_refresh=False):
+    if target_date:
+        target_date = datetime.datetime.strptime(target_date, "%Y-%m-%d").date()
+    else:
+        target_date = datetime.date.today()
+
+    start_date = target_date - datetime.timedelta(days=7)
+    end_date = target_date + datetime.timedelta(days=7)
+
     try:
         if not force_refresh:
             cached_events = load_cache()
             if cached_events:
-                all_events = cached_events["all_events"]
-                todays_events = [
-                    event
-                    for event in all_events
-                    if datetime.datetime.fromisoformat(
-                        re.search(r"Start time: (\S+)", event).group(1).rstrip(",")
-                    ).date()
-                    == today
-                ]
-                return all_events, todays_events[:10]
+                return cached_events["all_events"], []
 
-        # If force_refresh or no cache, fetch from Google Calendar
         calendar_documents = calendar_reader.load_data(
             number_of_results=100,
-            start_date=start_of_week,
+            start_date=start_date,
         )
+
         all_events = [event.text for event in calendar_documents]
-        todays_events = [
-            event.text
-            for event in calendar_documents
-            if datetime.datetime.fromisoformat(
-                re.search(r"Start time: (\S+)", event.text).group(1).rstrip(",")
+        filtered_events = [
+            event
+            for event in all_events
+            if start_date
+            <= datetime.datetime.fromisoformat(
+                re.search(r"Start time: (\S+)", event).group(1).rstrip(",")
             ).date()
-            == today
+            <= end_date
         ]
-        # Update cache with new data
-        save_cache({"all_events": all_events, "todays_events": todays_events[:10]})
-        return all_events, todays_events[:10]
+
+        save_cache(
+            {
+                "all_events": filtered_events,
+                "last_updated": datetime.datetime.now().isoformat(),
+            }
+        )
+        return filtered_events, []
     except RefreshError as e:
         print(f"Error refreshing Google Calendar token: {e}")
         raise

@@ -6,8 +6,10 @@ import json
 from google.auth.exceptions import RefreshError
 from llama_index.core import VectorStoreIndex, Document, Settings
 import os
-from llama_index.embeddings.ollama import OllamaEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
+from llama_index.llms.openai import OpenAI
+from llama_index.llms.ollama import Ollama
+from llama_index.embeddings.ollama import OllamaEmbedding
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -24,9 +26,8 @@ USE_OLLAMA = os.getenv("OLLAMA") == "1"
 
 # Ollama embedding configuration
 OLLAMA_EMBEDDING_CONFIG = {
-    "model_name": os.getenv("OLLAMA_MODEL", "llama3.2"),
-    "base_url": os.getenv("OLLAMA_ENDPOINT", "http://localhost:11434"),
-    "ollama_additional_kwargs": {"mirostat": 0},
+    "model_name": os.getenv("OLLAMA_MODEL", "nomic-embed-text"),
+    "base_url": os.getenv("OLLAMA_EMBED_ENDPOINT", "http://localhost:11434"),
 }
 
 # OpenAI embedding configuration
@@ -114,12 +115,23 @@ async def create_calendar_index():
             for event in all_events
         ]
 
+        USE_OLLAMA = os.getenv("OLLAMA") == "1"
+
         if USE_OLLAMA:
-            ollama_embedding = OllamaEmbedding(**OLLAMA_EMBEDDING_CONFIG)
-            Settings.embed_model = ollama_embedding
+            embed_model = OllamaEmbedding(
+                model_name=os.getenv("OLLAMA_MODEL", "llama3.2"),
+                base_url=os.getenv("OLLAMA_EMBED_ENDPOINT", "http://localhost:11434"),
+            )
+            llm = Ollama(
+                model=os.getenv("OLLAMA_MODEL", "llama3.2"),
+                base_url=os.getenv("OLLAMA_ENDPOINT", "http://localhost:11434/v1"),
+            )
         else:
-            openai_embedding = OpenAIEmbedding(**OPENAI_EMBEDDING_CONFIG)
-            Settings.embed_model = openai_embedding
+            embed_model = OpenAIEmbedding(**OPENAI_EMBEDDING_CONFIG)
+            llm = OpenAI()
+
+        Settings.embed_model = embed_model
+        Settings.llm = llm
 
         # Create the index with the appropriate embedding
         index = VectorStoreIndex.from_documents(documents)

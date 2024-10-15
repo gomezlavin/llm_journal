@@ -40,6 +40,9 @@ async function loadEntry(filename) {
 
     await reloadCurrentJournalEntry();
 
+    // Add event listener for auto-save
+    editorContent.addEventListener("input", debouncedAutoSave);
+
     // Focus on the editor content
     editorContent.focus();
 
@@ -57,11 +60,21 @@ async function loadEntry(filename) {
     // Update URL parameter
     updateUrlParam("entry", filename);
 
+    // Extract the date from the filename (assuming format: YYYY-MM-DD-HHMMSS-entry.md)
+    const dateMatch = filename.match(/(\d{4}-\d{2}-\d{2})/);
+    const entryDate = dateMatch ? dateMatch[1] : null;
+
+    // Update the refresh button's data-date attribute
+    const refreshButton = document.getElementById("refresh-events-btn");
+    refreshButton.setAttribute("data-date", entryDate);
+
+    console.log(`Setting refresh button date to: ${entryDate}`); // Add this line for debugging
+
     // Update the right sidebar with events for the current date
-    if (filename) {
-      await updateRightSidebarEvents(filename);
+    if (entryDate) {
+      await updateRightSidebarEvents(entryDate);
     } else {
-      console.error("No filename available for loading events");
+      console.error("No valid date found in filename");
     }
 
     // Highlight the current entry in the sidebar
@@ -71,10 +84,15 @@ async function loadEntry(filename) {
   }
 }
 
-// Function to auto-save the entry
+// Add these variables at the top of the file, after other imports
+let autoSaveTimeout;
+const AUTO_SAVE_DELAY = 2000; // 2 seconds
+
+// Modify the existing autoSaveEntry function
 async function autoSaveEntry() {
   const editorContent = document.getElementById("editor-content");
   const currentFilename = editorContent.dataset.currentFilename;
+  const saveIndicator = document.getElementById("save-indicator");
 
   if (!currentFilename) {
     console.error("No current filename found for auto-save");
@@ -82,8 +100,14 @@ async function autoSaveEntry() {
   }
 
   try {
+    saveIndicator.textContent = "Saving...";
+    saveIndicator.classList.add("visible");
+
     // Convert HTML to Markdown
-    const markdownContent = htmlToMarkdown(editorContent.innerHTML);
+    const htmlContent = editorContent.innerHTML;
+    console.log("HTML content before conversion:", htmlContent);
+    const markdownContent = htmlToMarkdown(htmlContent);
+    console.log("Markdown content after conversion:", markdownContent);
 
     const response = await fetch(`/api/update-entry/${currentFilename}`, {
       method: "POST",
@@ -98,12 +122,50 @@ async function autoSaveEntry() {
     }
 
     console.log("Entry auto-saved successfully");
+    saveIndicator.textContent = "Saved";
+
+    // Hide the save indicator after 2 seconds
+    setTimeout(() => {
+      saveIndicator.classList.remove("visible");
+    }, 2000);
 
     // Refresh the entry list on the sidebar
     await loadJournalEntries();
+
+    // Reload the current entry to show the updated content
+    await reloadCurrentJournalEntry();
+
+    // Notify Chainlit copilot about the update
+    sendReloadMessageToChainlit(currentFilename);
   } catch (error) {
     console.error("Error auto-saving entry:", error);
+    saveIndicator.textContent = "Save failed";
+    saveIndicator.classList.add("error");
+
+    // Hide the save indicator after 2 seconds
+    setTimeout(() => {
+      saveIndicator.classList.remove("visible", "error");
+    }, 2000);
   }
+}
+
+// Add this function if it doesn't exist already
+function sendReloadMessageToChainlit(filename) {
+  if (window.sendChainlitMessage) {
+    window.sendChainlitMessage({
+      type: "system_message",
+      output: JSON.stringify({ action: "reload_entry", filename: filename }),
+    });
+    console.log("Sent reload message to Chainlit copilot");
+  } else {
+    console.error("sendChainlitMessage function not available");
+  }
+}
+
+// Add this new function for debounced auto-save
+function debouncedAutoSave() {
+  clearTimeout(autoSaveTimeout);
+  autoSaveTimeout = setTimeout(autoSaveEntry, AUTO_SAVE_DELAY);
 }
 
 // Function to convert HTML to Markdown
@@ -115,6 +177,9 @@ function htmlToMarkdown(html) {
   // Remove the title from the HTML content
   let content = html.replace(/<h1>.*?<\/h1>/i, "");
 
+  // Preserve newlines between paragraphs
+  content = content.replace(/<\/p>\s*<p>/g, "</p>\n\n<p>");
+
   // Convert the rest of the content
   let markdown = content
     .replace(/<h2>(.*?)<\/h2>/gi, "## $1\n\n")
@@ -122,7 +187,7 @@ function htmlToMarkdown(html) {
     .replace(/<strong>(.*?)<\/strong>/gi, "**$1**")
     .replace(/<em>(.*?)<\/em>/gi, "*$1*")
     .replace(/<p>(.*?)<\/p>/gi, "$1\n\n")
-    .replace(/<br>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<ul>(.*?)<\/ul>/gi, "$1\n")
     .replace(/<li>(.*?)<\/li>/gi, "- $1\n")
     .replace(/<ol>(.*?)<\/ol>/gi, "$1\n")
@@ -131,17 +196,11 @@ function htmlToMarkdown(html) {
   // Remove any remaining HTML tags
   markdown = markdown.replace(/<[^>]+>/g, "");
 
+  // Ensure double newlines between paragraphs
+  markdown = markdown.replace(/\n{3,}/g, "\n\n");
+
   // Combine the title and content
   return `# ${title}\n\n${markdown.trim()}`;
-}
-
-// Debounce function to limit the frequency of auto-saves
-function debounce(func, delay) {
-  let timeoutId;
-  return function (...args) {
-    clearTimeout(timeoutId);
-    timeoutId = setTimeout(() => func.apply(this, args), delay);
-  };
 }
 
 // Load entries when the page loads
@@ -236,7 +295,7 @@ async function createNewEntry() {
     editorContent.classList.remove("placeholder");
 
     // Add event listener for auto-save
-    editorContent.addEventListener("input", debounce(autoSaveEntry, 1000));
+    editorContent.addEventListener("input", debouncedAutoSave);
 
     // Focus the editor and place cursor after the title
     editorContent.focus();
@@ -327,23 +386,27 @@ function updateCalendarSidebar(events, date) {
   }
 
   events.forEach((event) => {
-    if (!event || !event.title || !event.start_time || !event.end_time) {
+    if (!event || typeof event !== "object") {
       console.error("Invalid event data:", event);
       return;
     }
 
     const li = document.createElement("li");
-    const startTime = new Date(event.start_time).toLocaleTimeString("en-US", {
+    const startTime = new Date(
+      event.start.dateTime || event.start.date
+    ).toLocaleTimeString("en-US", {
       hour: "numeric",
       minute: "2-digit",
       hour12: true,
     });
-    const endTime = new Date(event.end_time).toLocaleTimeString("en-US", {
+    const endTime = new Date(
+      event.end.dateTime || event.end.date
+    ).toLocaleTimeString("en-US", {
       hour: "numeric",
       minute: "2-digit",
       hour12: true,
     });
-    li.textContent = `${event.title}, ${startTime}-${endTime}`;
+    li.textContent = `${event.summary}, ${startTime}-${endTime}`;
     eventList.appendChild(li);
   });
 }
@@ -408,9 +471,10 @@ async function updateRightSidebarEvents(filename) {
 function highlightCurrentEntry(filename) {
   const entryItems = document.querySelectorAll(".entry-item");
   entryItems.forEach((item) => {
-    item.classList.remove("current-entry");
     if (item.dataset.filename === filename) {
       item.classList.add("current-entry");
+    } else {
+      item.classList.remove("current-entry");
     }
   });
 }
@@ -432,7 +496,35 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 
   const refreshEventsBtn = document.getElementById("refresh-events-btn");
-  refreshEventsBtn.addEventListener("click", function () {
-    fetchCalendarEvents(true);
-  });
+  refreshEventsBtn.addEventListener("click", refreshEvents);
 });
+
+// Modify the refreshEvents function
+async function refreshEvents() {
+  const refreshButton = document.getElementById("refresh-events-btn");
+  const date = refreshButton.getAttribute("data-date");
+
+  if (!date) {
+    console.error("No date specified for event refresh");
+    return;
+  }
+
+  console.log(`Refreshing events for date: ${date}`);
+
+  try {
+    const response = await fetch(
+      `/api/calendar-events/${date}?force_refresh=true`
+    );
+    if (!response.ok) {
+      throw new Error(`Failed to fetch events: ${response.statusText}`);
+    }
+    const events = await response.json();
+    updateCalendarSidebar(events, date);
+  } catch (error) {
+    console.error("Error refreshing events:", error);
+    updateCalendarSidebar([], date);
+  }
+}
+
+// Remove this line as it's redundant now
+// document.getElementById("refresh-events-btn").addEventListener("click", refreshEvents);

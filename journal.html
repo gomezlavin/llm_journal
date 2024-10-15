@@ -17,11 +17,14 @@
       </ul>
     </div>
     <div class="editor">
-      <div id="editor-content" class="editor-content" contenteditable="true"></div>
+      <div class="editor-wrapper">
+        <div id="editor-content" class="editor-content" contenteditable="true"></div>
+        <div id="save-indicator" class="save-indicator"></div>
+      </div>
     </div>
     <div class="sidebar right-sidebar" id="right-sidebar">
       <h3 id="sidebar-title">Events</h3>
-      <button id="refresh-events-btn" class="refresh-btn">🔄 Refresh Events</button>
+      <button id="refresh-events-btn" class="refresh-btn" data-date="">🔄 Refresh Events</button>
       <ul id="event-list" class="event-list">
         <!-- Events will be dynamically loaded here -->
       </ul>

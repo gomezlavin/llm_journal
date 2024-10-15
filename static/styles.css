@@ -83,11 +83,16 @@ html {
   flex-grow: 1;
   padding: 40px;
   background-color: #fff;
+  position: relative;
+}
+
+.editor-wrapper {
+  max-width: 800px;
+  margin: 0 auto;
+  position: relative;
 }
 
 .editor-content {
-  max-width: 800px;
-  margin: 0 auto;
   outline: none;
   min-height: 500px;
   font-size: 16px;
@@ -155,4 +160,26 @@ html {
 
 #chainlit-copilot-popover {
   height: min(503px, -208px + 100vh);
+}
+
+/* Add these styles at the end of the file */
+.save-indicator {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background-color: #4CAF50;
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.3s ease-in-out;
+}
+
+.save-indicator.visible {
+  opacity: 1;
+}
+
+.save-indicator.error {
+  background-color: #f44336;
 }

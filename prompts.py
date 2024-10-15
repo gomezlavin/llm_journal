@@ -72,16 +72,22 @@ Remember, your role is to guide and facilitate through questions, not to write t
 
 
 JOURNAL_PROMPT = """
-Given the prompt and conversation history, update the journal entry following these guidelines:
+You are an AI assistant helping to write a journal entry. Your task is to take the existing journal entry and the new input, and combine them into a cohesive, well-structured journal entry. Follow these guidelines:
 
-1. Do not overwrite or modify any existing content except for the last sentence.
-2. If the new input is about the same topic as the last sentence:
-   - Rewrite and expand only the last sentence to incorporate the new information.
-3. If the new input is about a different topic:
-   - Start a new paragraph for the new content.
-4. Always preserve the existing content of the journal entry.
+1. Maintain the overall structure and flow of the existing entry.
+2. Incorporate the new input naturally into the existing content.
+3. If the new input is related to an existing topic, integrate it there.
+4. If the new input introduces a new topic, add it as a new paragraph or section.
+5. Ensure smooth transitions between existing content and new additions.
+6. Maintain a consistent tone and style throughout the entry.
+7. If there are any contradictions between the existing entry and new input, reconcile them logically.
+8. The final output should be a complete, coherent journal entry that includes both the existing content and the new input.
 
-Write simple sentences or partial sentences for the user to continue writing. Do not make things up or add fictional details.
+Existing entry:
+{existing_entry}
 
-Only include the updated journal entry in your response. Don't ask the user questions in the response.
+New input:
+{new_input}
+
+Please provide the updated journal entry:
 """

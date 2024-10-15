@@ -4,6 +4,8 @@ async function loadJournalEntries() {
     const response = await fetch("/api/journal-entries");
     const entries = await response.json();
     const entryList = document.getElementById("entry-list");
+    const currentFilename =
+      document.getElementById("editor-content").dataset.currentFilename;
 
     // Clear existing entries
     entryList.innerHTML = "";
@@ -11,6 +13,7 @@ async function loadJournalEntries() {
     entries.forEach((entry) => {
       const li = document.createElement("li");
       li.className = "entry-item";
+      li.dataset.filename = entry.filename;
       li.innerHTML = `
         <div class="entry-title" title="${entry.title}">${entry.title}</div>
         <div class="entry-preview">
@@ -21,6 +24,9 @@ async function loadJournalEntries() {
       li.addEventListener("click", () => loadEntry(entry.filename));
       entryList.appendChild(li);
     });
+
+    // Highlight the current entry
+    highlightCurrentEntry(currentFilename);
   } catch (error) {
     console.error("Error loading journal entries:", error);
   }
@@ -57,6 +63,9 @@ async function loadEntry(filename) {
     } else {
       console.error("No filename available for loading events");
     }
+
+    // Highlight the current entry in the sidebar
+    highlightCurrentEntry(filename);
   } catch (error) {
     console.error("Error loading entry:", error);
   }
@@ -385,6 +394,17 @@ async function updateRightSidebarEvents(filename) {
     console.error("Error fetching events for the date:", error);
     updateCalendarSidebar([], filename.split("-").slice(0, 3).join("-"));
   }
+}
+
+// Add this function to highlight the current entry
+function highlightCurrentEntry(filename) {
+  const entryItems = document.querySelectorAll(".entry-item");
+  entryItems.forEach((item) => {
+    item.classList.remove("current-entry");
+    if (item.dataset.filename === filename) {
+      item.classList.add("current-entry");
+    }
+  });
 }
 
 document.addEventListener("DOMContentLoaded", function () {

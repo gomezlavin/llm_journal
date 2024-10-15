@@ -94,7 +94,10 @@ async function autoSaveEntry() {
     saveIndicator.classList.add("visible");
 
     // Convert HTML to Markdown
-    const markdownContent = htmlToMarkdown(editorContent.innerHTML);
+    const htmlContent = editorContent.innerHTML;
+    console.log("HTML content before conversion:", htmlContent);
+    const markdownContent = htmlToMarkdown(htmlContent);
+    console.log("Markdown content after conversion:", markdownContent);
 
     const response = await fetch(`/api/update-entry/${currentFilename}`, {
       method: "POST",
@@ -156,6 +159,9 @@ function htmlToMarkdown(html) {
   // Remove the title from the HTML content
   let content = html.replace(/<h1>.*?<\/h1>/i, "");
 
+  // Preserve newlines between paragraphs
+  content = content.replace(/<\/p>\s*<p>/g, "</p>\n\n<p>");
+
   // Convert the rest of the content
   let markdown = content
     .replace(/<h2>(.*?)<\/h2>/gi, "## $1\n\n")
@@ -163,7 +169,7 @@ function htmlToMarkdown(html) {
     .replace(/<strong>(.*?)<\/strong>/gi, "**$1**")
     .replace(/<em>(.*?)<\/em>/gi, "*$1*")
     .replace(/<p>(.*?)<\/p>/gi, "$1\n\n")
-    .replace(/<br>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<ul>(.*?)<\/ul>/gi, "$1\n")
     .replace(/<li>(.*?)<\/li>/gi, "- $1\n")
     .replace(/<ol>(.*?)<\/ol>/gi, "$1\n")
@@ -171,6 +177,9 @@ function htmlToMarkdown(html) {
 
   // Remove any remaining HTML tags
   markdown = markdown.replace(/<[^>]+>/g, "");
+
+  // Ensure double newlines between paragraphs
+  markdown = markdown.replace(/\n{3,}/g, "\n\n");
 
   // Combine the title and content
   return `# ${title}\n\n${markdown.trim()}`;

@@ -83,11 +83,16 @@ html {
   flex-grow: 1;
   padding: 40px;
   background-color: #fff;
+  position: relative;
+}
+
+.editor-wrapper {
+  max-width: 800px;
+  margin: 0 auto;
+  position: relative;
 }
 
 .editor-content {
-  max-width: 800px;
-  margin: 0 auto;
   outline: none;
   min-height: 500px;
   font-size: 16px;
@@ -159,17 +164,16 @@ html {
 
 /* Add these styles at the end of the file */
 .save-indicator {
-  position: fixed;
-  top: 20px;
-  right: 20px;
+  position: absolute;
+  top: 10px;
+  right: 10px;
   background-color: #4CAF50;
   color: white;
-  padding: 8px 16px;
+  padding: 4px 8px;
   border-radius: 4px;
-  font-size: 14px;
+  font-size: 12px;
   opacity: 0;
   transition: opacity 0.3s ease-in-out;
-  z-index: 1000;
 }
 
 .save-indicator.visible {

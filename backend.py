@@ -168,9 +168,9 @@ def get_calendar_events_for_date(date):
                 end_time = event.split("End time: ")[1].split(",")[0]
                 date_events.append(
                     {
-                        "title": summary,
-                        "start_time": start_time,
-                        "end_time": end_time,
+                        "summary": summary,
+                        "start": {"dateTime": start_time},
+                        "end": {"dateTime": end_time},
                     }
                 )
 

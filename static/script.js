@@ -60,11 +60,21 @@ async function loadEntry(filename) {
     // Update URL parameter
     updateUrlParam("entry", filename);
 
+    // Extract the date from the filename (assuming format: YYYY-MM-DD-HHMMSS-entry.md)
+    const dateMatch = filename.match(/(\d{4}-\d{2}-\d{2})/);
+    const entryDate = dateMatch ? dateMatch[1] : null;
+
+    // Update the refresh button's data-date attribute
+    const refreshButton = document.getElementById("refresh-events-btn");
+    refreshButton.setAttribute("data-date", entryDate);
+
+    console.log(`Setting refresh button date to: ${entryDate}`); // Add this line for debugging
+
     // Update the right sidebar with events for the current date
-    if (filename) {
-      await updateRightSidebarEvents(filename);
+    if (entryDate) {
+      await updateRightSidebarEvents(entryDate);
     } else {
-      console.error("No filename available for loading events");
+      console.error("No valid date found in filename");
     }
 
     // Highlight the current entry in the sidebar
@@ -368,23 +378,27 @@ function updateCalendarSidebar(events, date) {
   }
 
   events.forEach((event) => {
-    if (!event || !event.title || !event.start_time || !event.end_time) {
+    if (!event || typeof event !== "object") {
       console.error("Invalid event data:", event);
       return;
     }
 
     const li = document.createElement("li");
-    const startTime = new Date(event.start_time).toLocaleTimeString("en-US", {
+    const startTime = new Date(
+      event.start.dateTime || event.start.date
+    ).toLocaleTimeString("en-US", {
       hour: "numeric",
       minute: "2-digit",
       hour12: true,
     });
-    const endTime = new Date(event.end_time).toLocaleTimeString("en-US", {
+    const endTime = new Date(
+      event.end.dateTime || event.end.date
+    ).toLocaleTimeString("en-US", {
       hour: "numeric",
       minute: "2-digit",
       hour12: true,
     });
-    li.textContent = `${event.title}, ${startTime}-${endTime}`;
+    li.textContent = `${event.summary}, ${startTime}-${endTime}`;
     eventList.appendChild(li);
   });
 }
@@ -474,7 +488,33 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 
   const refreshEventsBtn = document.getElementById("refresh-events-btn");
-  refreshEventsBtn.addEventListener("click", function () {
-    fetchCalendarEvents(true);
-  });
+  refreshEventsBtn.addEventListener("click", refreshEvents);
 });
+
+// Modify the refreshEvents function
+async function refreshEvents() {
+  const refreshButton = document.getElementById("refresh-events-btn");
+  const date = refreshButton.getAttribute("data-date");
+
+  if (!date) {
+    console.error("No date specified for event refresh");
+    return;
+  }
+
+  console.log(`Refreshing events for date: ${date}`); // Add this line for debugging
+
+  try {
+    const response = await fetch(`/api/calendar-events/${date}`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch events: ${response.statusText}`);
+    }
+    const events = await response.json();
+    updateCalendarSidebar(events, date);
+  } catch (error) {
+    console.error("Error refreshing events:", error);
+    updateCalendarSidebar([], date);
+  }
+}
+
+// Remove this line as it's redundant now
+// document.getElementById("refresh-events-btn").addEventListener("click", refreshEvents);

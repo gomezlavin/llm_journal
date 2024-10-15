@@ -127,7 +127,7 @@ async def create_calendar_index():
                 base_url=os.getenv("OLLAMA_ENDPOINT", "http://localhost:11434/v1"),
             )
         else:
-            embed_model = OpenAIEmbedding()
+            embed_model = OpenAIEmbedding(**OPENAI_EMBEDDING_CONFIG)
             llm = OpenAI()
 
         Settings.embed_model = embed_model

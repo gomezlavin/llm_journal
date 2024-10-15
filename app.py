@@ -361,7 +361,7 @@ Please update the journal entry based on the user's input and the recent convers
         # Notify the frontend about the update
         if cl.context.session.client_type == "copilot":
             fn = cl.CopilotFunction(
-                name="update_journal", args={"filename": updated_entry}
+                name="update_journal", args={"filename": updated_filename}
             )
             await fn.acall()
     else:

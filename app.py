@@ -188,13 +188,8 @@ async def update_journal_file(filename: str, new_content: str):
     with open(file_path, "r") as f:
         existing_content = f.read().strip()
 
-    # Prepare the prompt for the LLM
-    prompt = JOURNAL_PROMPT.format(
-        existing_entry=existing_content, new_input=new_content
-    )
-
-    # Generate journal entry using LLM
-    updated_entry = await generate_journal_entry(prompt)
+    # Append new content to existing content
+    updated_entry = f"{existing_content}\n\n{new_content}"
 
     # Write the updated entry to the file
     with open(file_path, "w") as f:
@@ -275,64 +270,90 @@ async def on_message(message: cl.Message):
         except json.JSONDecodeError:
             pass  # If it's not a valid JSON, treat it as a regular message
 
-    # Add user message to history
-    message_history.append({"role": "user", "content": message.content})
+    # Determine the type of user input
+    user_input = message.content.strip()
+    if user_input.lower().startswith("q:"):
+        # Question mode: Use SYSTEM_PROMPT
+        system_prompt = SYSTEM_PROMPT
+        user_content = user_input[2:].strip()
+        message_type = "question"
 
-    response_text = await generate_response(message_history)
-
-    print("Response:")
-    print(response_text)
-    try:
-        parsed_json = extract_json_from_response(response_text)
-        print(f"Parsed JSON: {parsed_json}")
-
-        if (
-            parsed_json
-            and "function_name" in parsed_json
-            and parsed_json["function_name"] in function_names
-        ):
-            matched_function = parsed_json["function_name"]
-            print(f"Matched function: {matched_function}")
-            print(f"Function parameters: {parsed_json.get('params', {})}")
-
-            function_response = await call_function(parsed_json)
-            message_history.append(
-                {
-                    "role": "assistant",
-                    "content": f"Respond using the following function call result: {function_response}",
-                }
+        # Include the current journal entry context if available
+        if current_entry:
+            with open(os.path.join("data", current_entry), "r") as f:
+                entry_content = f.read()
+            user_content = f"Current journal entry:\n\n{entry_content}\n\nUser question: {user_content}"
+    elif user_input.lower().startswith("j:"):
+        # Journal mode: Use JOURNAL_PROMPT
+        system_prompt = JOURNAL_PROMPT
+        user_content = user_input[2:].strip()
+        message_type = "journal"
+    else:
+        # Inform the user about using prefixes
+        await cl.Message(
+            content=(
+                "To help me understand your intent better, please use these prefixes:\n"
+                "- Start with 'j:' to update your journal entry\n"
+                "- Start with 'q:' to ask a general question\n"
+                "For now, I'll treat your input as a journal entry."
             )
-            print(f"Function response: {function_response}")
+        ).send()
+        system_prompt = JOURNAL_PROMPT
+        user_content = user_input
+        message_type = "journal"
 
-            # Only generate a new response if the function_response is not an error message
-            if not function_response.startswith(
-                "Calendar information is unavailable"
-            ) and not function_response.startswith(
-                "I'm having trouble accessing your calendar"
+    # Update message history with the appropriate system prompt
+    message_history = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content},
+    ]
+
+    response_text = ""  # Initialize response_text
+
+    # Generate response based on the message type
+    if message_type == "question":
+        response_text = await generate_response(message_history)
+
+        # Handle function calls for questions
+        try:
+            parsed_json = extract_json_from_response(response_text)
+            if (
+                parsed_json
+                and "function_name" in parsed_json
+                and parsed_json["function_name"] in function_names
             ):
+                function_response = await call_function(parsed_json)
+                message_history.append(
+                    {
+                        "role": "assistant",
+                        "content": f"Function call result: {function_response}",
+                    }
+                )
                 response_text = await generate_response(message_history)
-                print(f"Generate response: {response_text}")
-            else:
-                response_text = function_response
-        else:
-            print("No valid function call found in the response")
+        except Exception as e:
+            print(f"Error in JSON processing: {e}")
 
-    except Exception as e:
-        print(f"Error in JSON processing: {e}")
+        await print_response(response_text)
+    elif message_type == "journal" and current_entry:
+        updated_filename = await update_journal_file(current_entry, user_content)
+        response_text = f"Journal entry '{updated_filename}' has been updated."
+        await cl.Message(content=response_text).send()
 
-    response_message = await print_response(response_text)
-    message_history.append({"role": "assistant", "content": response_text})
-    cl.user_session.set("message_history", message_history)
-
-    # Only update the current journal entry if one is loaded
-    if current_entry:
-        updated_filename = await update_journal_file(current_entry, message.content)
-        # Use CopilotFunction to notify the frontend
+        # Notify the frontend about the update
         if cl.context.session.client_type == "copilot":
             fn = cl.CopilotFunction(
                 name="update_journal", args={"filename": updated_filename}
             )
             await fn.acall()
+    else:
+        response_text = (
+            "No current journal entry is loaded. Please load an entry before updating."
+        )
+        await cl.Message(content=response_text).send()
+
+    # Update the message history
+    message_history.append({"role": "assistant", "content": response_text})
+    cl.user_session.set("message_history", message_history)
 
 
 @cl.action_callback("reauth")
@@ -348,13 +369,8 @@ async def update_journal_file(filename: str, new_content: str):
     with open(file_path, "r") as f:
         existing_content = f.read().strip()
 
-    # Prepare the prompt for the LLM
-    prompt = JOURNAL_PROMPT.format(
-        existing_entry=existing_content, new_input=new_content
-    )
-
-    # Generate journal entry using LLM
-    updated_entry = await generate_journal_entry(prompt)
+    # Append new content to existing content
+    updated_entry = f"{existing_content}\n\n{new_content}"
 
     # Write the updated entry to the file
     with open(file_path, "w") as f:

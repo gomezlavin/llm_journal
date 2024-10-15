@@ -1,14 +1,28 @@
-# Welcome to Chainlit! 🚀🤖
+# Jai
 
-Hi there, Developer! 👋 We're excited to have you on board. Chainlit is a powerful tool designed to help you prototype, debug and share applications built on top of LLMs.
+Jai is a webapp that lets users write their journal entries with the help of AI.
 
-## Useful Links 🔗
+# How it works
 
-- **Documentation:** Get started with our comprehensive [Chainlit Documentation](https://docs.chainlit.io) 📚
-- **Discord Community:** Join our friendly [Chainlit Discord](https://discord.gg/k73SQ3FyUh) to ask questions, share your projects, and connect with other developers! 💬
+- **Frontend**: `journal.html` displays an Apple-like note-taking experience with a left sidebar to choose a note, and an editor that autosaves. It includes a Chainlit Copilot embedded via `script.js`.
+- **Copilot**: `app.py` contains the logic for the AI assistant, using Chainlit to handle user interactions and LLM responses.
+- **Backend**: `backend.py` is a Flask app that serves the frontend and provides an API for the Copilot to use.
+- **LLM**: Relies on OpenAI for remote models and Ollama for local models.
+- **Data Storage**: All journal entries are stored in markdown files in the `data` folder.
 
-We can't wait to see what you create with Chainlit! Happy coding! 💻😊
+# How to use
 
-## Welcome screen
+With OpenAI
+```
+bin/dev
+```
 
-To modify the welcome screen, edit the `chainlit.md` file at the root of your project. If you do not want a welcome screen, just leave this file empty.
+With Ollama (local llama3.2)
+```
+bin/dev local
+```
+
+# Improvements
+
+- Improve SYSTEM_PROMPT
+- Improve JOURNAL_PROMPT

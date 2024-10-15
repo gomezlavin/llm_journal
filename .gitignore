@@ -166,3 +166,4 @@ token.json
 
 data/*
 !data/.keep
+tmp

@@ -272,24 +272,16 @@ async function reloadCurrentJournalEntry() {
 }
 
 // Function to fetch calendar events
-async function fetchCalendarEvents() {
-  try {
-    const response = await fetch("/api/calendar-events");
-    const data = await response.json();
-    return data.todays_events.map((event) => {
-      const [_, summary, start_time, end_time] = event.match(
-        /Summary: (.*?), Start time: (.*?), End time: (.*?),/
-      );
-      return {
-        title: summary,
-        start_time: start_time,
-        end_time: end_time,
-      };
-    });
-  } catch (error) {
-    console.error("Error fetching calendar events:", error);
-    return [];
-  }
+async function fetchCalendarEvents(forceRefresh = false) {
+  const url = forceRefresh
+    ? "/api/calendar-events?refresh=true"
+    : "/api/calendar-events";
+  fetch(url)
+    .then((response) => response.json())
+    .then((data) => {
+      updateEventList(data.todays_events);
+    })
+    .catch((error) => console.error("Error fetching calendar events:", error));
 }
 
 // Function to update the sidebar with calendar events
@@ -409,5 +401,10 @@ document.addEventListener("DOMContentLoaded", function () {
     } else {
       toggleSidebarBtn.textContent = "📁";
     }
+  });
+
+  const refreshEventsBtn = document.getElementById("refresh-events-btn");
+  refreshEventsBtn.addEventListener("click", function () {
+    fetchCalendarEvents(true);
   });
 });

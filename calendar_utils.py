@@ -2,35 +2,59 @@ import asyncio
 from custom_calendar_reader import GoogleCalendarReader
 import datetime
 import re
-import os
+import json
 from google.auth.exceptions import RefreshError
 from llama_index.core import VectorStoreIndex, Document
+import os
 
+# Define and export CACHE_FILE
+CACHE_FILE = os.path.join("data", "calendar_cache.json")
+
+# Add this line near the top of the file, after imports
 calendar_reader = GoogleCalendarReader()
+
+
+def load_cache():
+    try:
+        with open(CACHE_FILE, "r") as f:
+            cache = json.load(f)
+        return cache["events"]
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        return None
 
 
 def fetch_and_filter_calendar_events():
     today = datetime.date.today()
     start_of_week = today - datetime.timedelta(days=today.weekday())
     try:
-        calendar_documents = calendar_reader.load_data(
-            number_of_results=100,
-            start_date=start_of_week,
-            local_data_filename=os.getenv("GCAL_TEST_DATAFILE"),
-        )
-        all_events = [event.text for event in calendar_documents]
-        todays_events = []
-        for event in calendar_documents:
-            start_time_match = re.search(r"Start time: (\S+)", event.text)
-            if start_time_match:
-                start_time_str = start_time_match.group(1).rstrip(",")
-                try:
-                    start_time = datetime.datetime.fromisoformat(start_time_str)
-                    if start_time.date() == today:
-                        todays_events.append(event.text)
-                except ValueError as e:
-                    print(f"Error parsing date for event: {event.text}. Error: {e}")
-        return all_events, todays_events[:10]
+        cached_events = load_cache()
+        if cached_events:
+            all_events = cached_events["all_events"]
+            todays_events = [
+                event
+                for event in all_events
+                if datetime.datetime.fromisoformat(
+                    re.search(r"Start time: (\S+)", event).group(1).rstrip(",")
+                ).date()
+                == today
+            ]
+            return all_events, todays_events[:10]
+        else:
+            # If no cache, fetch from Google Calendar
+            calendar_documents = calendar_reader.load_data(
+                number_of_results=100,
+                start_date=start_of_week,
+            )
+            all_events = [event.text for event in calendar_documents]
+            todays_events = [
+                event.text
+                for event in calendar_documents
+                if datetime.datetime.fromisoformat(
+                    re.search(r"Start time: (\S+)", event.text).group(1).rstrip(",")
+                ).date()
+                == today
+            ]
+            return all_events, todays_events[:10]
     except RefreshError as e:
         print(f"Error refreshing Google Calendar token: {e}")
         raise
@@ -41,7 +65,7 @@ def fetch_and_filter_calendar_events():
 
 async def create_calendar_index():
     try:
-        all_events, todays_events = await fetch_and_filter_calendar_events()
+        all_events, todays_events = fetch_and_filter_calendar_events()
         documents = [
             Document(text=event, metadata={"source": "calendar"})
             for event in all_events

@@ -1,12 +1,33 @@
 from flask import Flask, jsonify, send_file, send_from_directory, request
 import os
 import markdown
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
 import html2text
-from calendar_utils import fetch_and_filter_calendar_events
+import json
+from calendar_utils import CACHE_FILE, fetch_and_filter_calendar_events
 
 app = Flask(__name__, static_folder="static")
+
+# Update the CACHE_FILE path
+CACHE_EXPIRY = timedelta(hours=1)
+
+
+def load_cache():
+    try:
+        with open(CACHE_FILE, "r") as f:
+            cache = json.load(f)
+        if datetime.fromisoformat(cache["timestamp"]) + CACHE_EXPIRY > datetime.now():
+            return cache["events"]
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        pass
+    return None
+
+
+def save_cache(events):
+    cache = {"timestamp": datetime.now().isoformat(), "events": events}
+    with open(CACHE_FILE, "w") as f:
+        json.dump(cache, f)
 
 
 def generate_unique_filename():
@@ -102,11 +123,23 @@ def update_entry(filename):
 
 @app.route("/api/calendar-events")
 def get_calendar_events():
+    force_refresh = request.args.get("refresh", "").lower() == "true"
+    cached_events = None if force_refresh else load_cache()
+
+    if cached_events:
+        return jsonify(cached_events)
+
     try:
         all_events, todays_events = fetch_and_filter_calendar_events()
-        return jsonify({"all_events": all_events, "todays_events": todays_events})
+        events = {"all_events": all_events, "todays_events": todays_events}
+        save_cache(events)
+        return jsonify(events)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print(f"Error fetching calendar events: {e}")
+        cached_events = load_cache()
+        if cached_events:
+            return jsonify(cached_events)
+        return jsonify({"error": "Unable to fetch events and no cache available"}), 500
 
 
 @app.route("/api/calendar-events/<date>")

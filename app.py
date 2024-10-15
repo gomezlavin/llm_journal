@@ -4,7 +4,6 @@ import datetime
 import asyncio
 from dotenv import load_dotenv
 from prompts import SYSTEM_PROMPT, JOURNAL_PROMPT
-from custom_calendar_reader import GoogleCalendarReader
 from langsmith.wrappers import wrap_openai
 from llama_index.core import VectorStoreIndex, Document
 from typing import Dict, List, Tuple
@@ -12,6 +11,7 @@ import os
 import json
 from google.auth.exceptions import RefreshError
 import re
+from calendar_utils import CACHE_FILE
 
 # Load environment variables
 load_dotenv()
@@ -52,21 +52,38 @@ else:
 client = wrap_openai(
     openai.AsyncClient(api_key=config["api_key"], base_url=config["endpoint_url"])
 )
-calendar_reader = GoogleCalendarReader()
+# calendar_reader = GoogleCalendarReader()
+
+# Update the CACHE_FILE path
+# CACHE_FILE = os.path.join("data", "calendar_cache.json")
+
+
+async def load_cache():
+    try:
+        with open(CACHE_FILE, "r") as f:
+            cache = json.load(f)
+        return cache["events"]
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        return None
 
 
 async def create_calendar_index():
-    try:
-        all_events, todays_events = await fetch_and_filter_calendar_events()
-        documents = [
-            Document(text=event, metadata={"source": "calendar"})
-            for event in all_events
-        ]
-        index = VectorStoreIndex.from_documents(documents)
-        return index, todays_events
-    except RefreshError as e:
-        print(f"Error refreshing Google Calendar token: {e}")
-        return None, []
+    cached_events = await load_cache()
+    if cached_events:
+        all_events = cached_events["all_events"]
+        todays_events = cached_events["todays_events"]
+    else:
+        try:
+            all_events, todays_events = await fetch_and_filter_calendar_events()
+        except RefreshError as e:
+            print(f"Error refreshing Google Calendar token: {e}")
+            return None, []
+
+    documents = [
+        Document(text=event, metadata={"source": "calendar"}) for event in all_events
+    ]
+    index = VectorStoreIndex.from_documents(documents)
+    return index, todays_events
 
 
 # Helper functions
@@ -74,27 +91,20 @@ async def fetch_and_filter_calendar_events() -> Tuple[List[str], List[str]]:
     today = datetime.date.today()
     start_of_week = today - datetime.timedelta(days=today.weekday())
     try:
-        calendar_documents = calendar_reader.load_data(
-            number_of_results=100,
-            start_date=start_of_week,
-            local_data_filename=os.getenv("GCAL_TEST_DATAFILE"),
-        )
-        all_events = [event.text for event in calendar_documents]
-        todays_events = []
-        for event in calendar_documents:
-            start_time_match = re.search(r"Start time: (\S+)", event.text)
-            if start_time_match:
-                start_time_str = start_time_match.group(1).rstrip(",")
-                try:
-                    start_time = datetime.datetime.fromisoformat(start_time_str)
-                    if start_time.date() == today:
-                        todays_events.append(event.text)
-                except ValueError as e:
-                    print(f"Error parsing date for event: {event.text}. Error: {e}")
-        return all_events, todays_events[:10]
-    except RefreshError as e:
-        print(f"Error refreshing Google Calendar token: {e}")
-        raise
+        cached_events = await load_cache()
+        if cached_events:
+            all_events = cached_events["all_events"]
+            todays_events = [
+                event
+                for event in all_events
+                if datetime.datetime.fromisoformat(
+                    re.search(r"Start time: (\S+)", event).group(1).rstrip(",")
+                ).date()
+                == today
+            ]
+            return all_events, todays_events[:10]
+        else:
+            raise Exception("No cached events available")
     except Exception as e:
         print(f"Error fetching calendar events: {e}")
         return [], []
@@ -128,8 +138,8 @@ async def handle_reauth():
     ).send()
 
     # Reinitialize the calendar reader
-    global calendar_reader
-    calendar_reader = GoogleCalendarReader()
+    # global calendar_reader
+    # calendar_reader = GoogleCalendarReader()
 
     # Attempt to fetch calendar events to trigger the authentication flow
     try:

@@ -277,40 +277,7 @@ async def on_message(message: cl.Message):
 
     # Determine the type of user input
     user_input = message.content.strip()
-    if user_input.lower().startswith("q:"):
-        # Question mode: Use SYSTEM_PROMPT
-        system_prompt = SYSTEM_PROMPT
-        user_content = user_input[2:].strip()
-        message_type = "question"
-
-        # Include the current journal entry context if available
-        if current_entry:
-            with open(os.path.join("data", current_entry), "r") as f:
-                entry_content = f.read()
-            user_content = f"Current journal entry:\n\n{entry_content}\n\nUser question: {user_content}"
-
-        # Special handling for calendar-related questions
-        if "today" in user_content.lower() and "event" in user_content.lower():
-            # Fetch today's events directly
-            today = datetime.datetime.now().strftime("%Y-%m-%d")
-            calendar_events = fetch_and_filter_calendar_events(
-                target_date=today, force_refresh=True
-            )
-            if calendar_events:
-                all_events, todays_events = calendar_events
-                events_str = "\n".join([f"- {event}" for event in todays_events])
-                response_text = (
-                    f"Here are your events for today ({today}):\n{events_str}"
-                )
-            else:
-                response_text = (
-                    f"You don't have any events scheduled for today ({today})."
-                )
-
-            await cl.Message(content=response_text).send()
-            return
-
-    elif user_input.lower().startswith("j:"):
+    if user_input.lower().startswith("j:"):
         # Journal mode: Use JOURNAL_PROMPT
         system_prompt = JOURNAL_PROMPT
         user_content = user_input[2:].strip()
@@ -339,18 +306,16 @@ User input for journal update: {user_content}
 Please update the journal entry based on the user's input and the recent conversation context. Be sure to maintain the overall structure and flow of the existing entry while incorporating new information or addressing the user's specific request."""
 
     else:
-        # Inform the user about using prefixes
-        await cl.Message(
-            content=(
-                "To help me understand your intent better, please use these prefixes:\n"
-                "- Start with 'j:' to update your journal entry\n"
-                "- Start with 'q:' to ask a general question\n"
-                "For now, I'll treat your input as a journal entry."
-            )
-        ).send()
-        system_prompt = JOURNAL_PROMPT
+        # Question mode (default): Use SYSTEM_PROMPT
+        system_prompt = SYSTEM_PROMPT
         user_content = user_input
-        message_type = "journal"
+        message_type = "question"
+
+        # Include the current journal entry context if available
+        if current_entry:
+            with open(os.path.join("data", current_entry), "r") as f:
+                entry_content = f.read()
+            user_content = f"Current journal entry:\n\n{entry_content}\n\nUser question: {user_content}"
 
     # Update message history with the appropriate system prompt
     message_history = [

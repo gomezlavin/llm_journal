@@ -109,5 +109,33 @@ def get_calendar_events():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/calendar-events/<date>")
+def get_calendar_events_for_date(date):
+    try:
+        print(f"Fetching events for date: {date}")
+        all_events, _ = fetch_and_filter_calendar_events()
+        date_events = []
+        for event in all_events:
+            event_date = event.split("Start time: ")[1].split("T")[0]
+            if event_date == date:
+                summary = event.split("Summary: ")[1].split(",")[0]
+                start_time = event.split("Start time: ")[1].split(",")[0]
+                end_time = event.split("End time: ")[1].split(",")[0]
+                date_events.append(
+                    {
+                        "title": summary,
+                        "start_time": start_time,
+                        "end_time": end_time,
+                    }
+                )
+
+        print(f"Found {len(date_events)} events for date {date}")
+        print(f"Events: {date_events}")  # Add this line for debugging
+        return jsonify(date_events)
+    except Exception as e:
+        print(f"Error fetching events for date {date}: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == "__main__":
     app.run(debug=True)

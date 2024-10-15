@@ -408,9 +408,10 @@ async function updateRightSidebarEvents(filename) {
 function highlightCurrentEntry(filename) {
   const entryItems = document.querySelectorAll(".entry-item");
   entryItems.forEach((item) => {
-    item.classList.remove("current-entry");
     if (item.dataset.filename === filename) {
       item.classList.add("current-entry");
+    } else {
+      item.classList.remove("current-entry");
     }
   });
 }

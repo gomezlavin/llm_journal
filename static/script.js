@@ -285,12 +285,20 @@ async function fetchCalendarEvents(forceRefresh = false) {
   const url = forceRefresh
     ? "/api/calendar-events?refresh=true"
     : "/api/calendar-events";
-  fetch(url)
-    .then((response) => response.json())
-    .then((data) => {
-      updateEventList(data.todays_events);
-    })
-    .catch((error) => console.error("Error fetching calendar events:", error));
+  try {
+    const response = await fetch(url);
+    const data = await response.json();
+
+    // Use the current date for today's events
+    const today = new Date().toISOString().split("T")[0];
+
+    // Update the calendar sidebar with today's events
+    updateCalendarSidebar(data.todays_events, today);
+  } catch (error) {
+    console.error("Error fetching calendar events:", error);
+    // Update the calendar sidebar to show an error message
+    updateCalendarSidebar([], new Date().toISOString().split("T")[0]);
+  }
 }
 
 // Function to update the sidebar with calendar events

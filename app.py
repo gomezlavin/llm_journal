@@ -33,23 +33,30 @@ USE_OLLAMA = os.getenv("OLLAMA") == "1"
 
 if USE_OLLAMA:
     config = {
-        "endpoint_url": os.getenv("OLLAMA_ENDPOINT", "http://localhost:11434/v1"),
+        "endpoint_url": os.getenv(
+            "OLLAMA_ENDPOINT", "http://localhost:11434"
+        ),  # Remove "/v1"
         "api_key": "ollama",  # Ollama doesn't require an API key, but we need to provide something
         "model": os.getenv("OLLAMA_MODEL", "llama3.2"),
     }
 else:
     config = {
-        "endpoint_url": os.getenv("OPENAI_ENDPOINT"),
         "api_key": os.getenv("OPENAI_API_KEY"),
-        "model": "gpt-4",
+        "model": "gpt-4o",
     }
 
 print(f"AI Provider: {'Ollama' if USE_OLLAMA else 'OpenAI'}")
 
 # Initialize services
-client = wrap_openai(
-    openai.AsyncClient(api_key=config["api_key"], base_url=config["endpoint_url"])
-)
+if USE_OLLAMA:
+    client = wrap_openai(
+        openai.AsyncClient(
+            api_key="ollama",  # required, but unused
+            base_url="http://localhost:11434/v1",
+        )
+    )
+else:
+    client = wrap_openai(openai.AsyncClient(api_key=config["api_key"]))
 
 
 # Helper functions
@@ -203,35 +210,26 @@ async def update_journal_file(filename: str, new_content: str):
     return filename
 
 
-async def generate_journal_entry(prompt: str) -> str:
-    gen_kwargs = {
-        "model": config["model"],
-        "temperature": 0.7,
-        "max_tokens": 1000,
-    }
-
+@observe
+async def generate_response(message_history):
     response = await client.chat.completions.create(
-        messages=[{"role": "user", "content": prompt}], **gen_kwargs
+        model=config["model"],
+        messages=message_history,
+        temperature=0.3,
+        max_tokens=500,
     )
-    journal_entry = response.choices[0].message.content
-
-    return journal_entry
+    return response.choices[0].message.content
 
 
 @observe
-async def generate_response(message_history):
-    gen_kwargs = {
-        "model": config["model"],
-        "temperature": 0.3,
-        "max_tokens": 500,
-    }
-
+async def generate_journal_entry(prompt: str) -> str:
     response = await client.chat.completions.create(
-        messages=message_history, **gen_kwargs
+        model=config["model"],
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.7,
+        max_tokens=1000,
     )
-    response_text = response.choices[0].message.content
-
-    return response_text
+    return response.choices[0].message.content
 
 
 @cl.on_message
@@ -267,7 +265,7 @@ async def on_message(message: cl.Message):
                     message_history.append(
                         {
                             "role": "system",
-                            "content": f"{action_verb.capitalize()} journal entry: {filename}\n\n{entry_content}",
+                            "content": f"Journal entry: {filename}\n\n{entry_content}",
                         }
                     )
                     cl.user_session.set("message_history", message_history)
@@ -363,7 +361,7 @@ Please update the journal entry based on the user's input and the recent convers
         # Notify the frontend about the update
         if cl.context.session.client_type == "copilot":
             fn = cl.CopilotFunction(
-                name="update_journal", args={"filename": updated_filename}
+                name="update_journal", args={"filename": updated_entry}
             )
             await fn.acall()
     else:

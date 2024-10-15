@@ -47,6 +47,16 @@ async function loadEntry(filename) {
 
     // Send the current filename to Chainlit copilot
     sendCurrentFilenameToChainlit(filename);
+
+    // Update URL parameter
+    updateUrlParam("entry", filename);
+
+    // Update the right sidebar with events for the current date
+    if (filename) {
+      await updateRightSidebarEvents(filename);
+    } else {
+      console.error("No filename available for loading events");
+    }
   } catch (error) {
     console.error("Error loading entry:", error);
   }
@@ -126,8 +136,13 @@ function debounce(func, delay) {
 }
 
 // Load entries when the page loads
-window.addEventListener("load", () => {
-  loadJournalEntries();
+window.addEventListener("load", async () => {
+  await loadJournalEntries();
+
+  // Fetch and display calendar events
+  const calendarEvents = await fetchCalendarEvents();
+  const today = new Date().toISOString().split("T")[0];
+  updateCalendarSidebar(calendarEvents, today);
 
   // Add event listener for the new entry button
   const newEntryBtn = document.getElementById("new-entry-btn");
@@ -137,10 +152,17 @@ window.addEventListener("load", () => {
   const editorContent = document.getElementById("editor-content");
   editorContent.addEventListener("focus", handleEditorFocus);
 
-  // Mount Chainlit widget and open it
+  // Mount Chainlit widget with updated configuration
   window.mountChainlitWidget({
+    containerId: "toggle-sidebar-btn",
     chainlitServer: "http://localhost:8000",
-    autoOpen: true, // This will open the widget when the page loads
+    button: {
+      style: {
+        bgcolor: "#ffffff",
+        color: "#000000",
+        borderColor: "#e0e0e0",
+      },
+    },
   });
 
   // Send the current filename to Chainlit when the widget is ready
@@ -150,6 +172,14 @@ window.addEventListener("load", () => {
       sendCurrentFilenameToChainlit(currentFilename);
     }
   });
+
+  // Check for entry parameter in URL
+  const entryParam = getUrlParam("entry");
+  if (entryParam) {
+    await loadEntry(entryParam);
+  } else {
+    await openTodaysLatestNote();
+  }
 });
 
 // Function to send the current filename to Chainlit
@@ -183,11 +213,6 @@ window.addEventListener("chainlit-call-fn", (e) => {
 
 // Remove the old chainlit-message event listener as it's no longer needed
 
-// Mount Chainlit widget
-window.mountChainlitWidget({
-  chainlitServer: "http://localhost:8000",
-});
-
 // Function to create a new entry
 async function createNewEntry() {
   try {
@@ -214,6 +239,10 @@ async function createNewEntry() {
     sel.addRange(range);
 
     await loadJournalEntries(); // Reload the entry list
+    updateUrlParam("entry", newEntry.filename); // Update URL parameter
+
+    // Update the right sidebar with events for the new entry's date
+    await updateRightSidebarEvents(newEntry.filename);
   } catch (error) {
     console.error("Error creating new entry:", error);
   }
@@ -241,3 +270,144 @@ async function reloadCurrentJournalEntry() {
     }
   }
 }
+
+// Function to fetch calendar events
+async function fetchCalendarEvents() {
+  try {
+    const response = await fetch("/api/calendar-events");
+    const data = await response.json();
+    return data.todays_events.map((event) => {
+      const [_, summary, start_time, end_time] = event.match(
+        /Summary: (.*?), Start time: (.*?), End time: (.*?),/
+      );
+      return {
+        title: summary,
+        start_time: start_time,
+        end_time: end_time,
+      };
+    });
+  } catch (error) {
+    console.error("Error fetching calendar events:", error);
+    return [];
+  }
+}
+
+// Function to update the sidebar with calendar events
+function updateCalendarSidebar(events, date) {
+  const eventList = document.getElementById("event-list");
+  eventList.innerHTML = ""; // Clear existing events
+
+  console.log("Updating calendar sidebar with events:", events);
+  console.log("Date:", date);
+
+  // Update the sidebar title with the date
+  const sidebarTitle = document.getElementById("sidebar-title");
+  const dateObj = new Date(date);
+  const options = {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  };
+  sidebarTitle.textContent = dateObj.toLocaleDateString("en-US", options);
+
+  if (!Array.isArray(events) || events.length === 0) {
+    console.log("No events to display");
+    eventList.innerHTML = "<li>No events for this date</li>";
+    return;
+  }
+
+  events.forEach((event) => {
+    if (!event || !event.title || !event.start_time || !event.end_time) {
+      console.error("Invalid event data:", event);
+      return;
+    }
+
+    const li = document.createElement("li");
+    const startTime = new Date(event.start_time).toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+    const endTime = new Date(event.end_time).toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+    li.textContent = `${event.title}, ${startTime}-${endTime}`;
+    eventList.appendChild(li);
+  });
+}
+
+// Function to open today's latest note
+async function openTodaysLatestNote() {
+  try {
+    const response = await fetch("/api/journal-entries");
+    const entries = await response.json();
+
+    const today = new Date().toISOString().split("T")[0];
+    const todaysEntries = entries.filter((entry) => entry.date === today);
+
+    if (todaysEntries.length > 0) {
+      const latestEntry = todaysEntries[0]; // Entries are already sorted latest first
+      await loadEntry(latestEntry.filename);
+    } else {
+      await createNewEntry();
+    }
+  } catch (error) {
+    console.error("Error opening today's latest note:", error);
+  }
+}
+
+// Function to update URL parameter
+function updateUrlParam(key, value) {
+  const url = new URL(window.location);
+  url.searchParams.set(key, value);
+  window.history.pushState({}, "", url);
+}
+
+// Function to get URL parameter
+function getUrlParam(key) {
+  const urlParams = new URLSearchParams(window.location.search);
+  return urlParams.get(key);
+}
+
+// Add this new function to update the right sidebar events
+async function updateRightSidebarEvents(filename) {
+  try {
+    const date = filename.split("-").slice(0, 3).join("-");
+    console.log("Fetching events for date:", date);
+    const response = await fetch(`/api/calendar-events/${date}`);
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const events = await response.json();
+    console.log("Received events:", events);
+    if (Array.isArray(events) && events.length > 0) {
+      updateCalendarSidebar(events, date);
+    } else {
+      console.log("No events found for the date");
+      updateCalendarSidebar([], date);
+    }
+  } catch (error) {
+    console.error("Error fetching events for the date:", error);
+    updateCalendarSidebar([], filename.split("-").slice(0, 3).join("-"));
+  }
+}
+
+document.addEventListener("DOMContentLoaded", function () {
+  const toggleSidebarBtn = document.getElementById("toggle-sidebar-btn");
+  const rightSidebar = document.getElementById("right-sidebar");
+
+  toggleSidebarBtn.addEventListener("click", function () {
+    rightSidebar.classList.toggle("hidden");
+    toggleSidebarBtn.classList.toggle("sidebar-hidden");
+
+    // Update the emoji based on the sidebar state
+    if (rightSidebar.classList.contains("hidden")) {
+      toggleSidebarBtn.textContent = "🗄️";
+    } else {
+      toggleSidebarBtn.textContent = "📁";
+    }
+  });
+});

@@ -124,7 +124,7 @@ def update_entry(filename):
     if not content:
         return jsonify({"error": "No content provided"}), 400
 
-    # Split the content into lines
+    # Split the content into lines, preserving empty lines
     lines = content.split("\n")
 
     # Ensure there's at least one line
@@ -134,10 +134,10 @@ def update_entry(filename):
     # The first non-empty line is the title
     title = next((line for line in lines if line.strip()), "Untitled")
 
-    # The rest is the content
-    body = "\n".join(lines[1:]).strip()
+    # The rest is the content, preserving all newlines
+    body = "\n".join(lines[lines.index(title) + 1 :])
 
-    # Combine title and body
+    # Combine title and body, ensuring two newlines after the title
     full_content = f"{title}\n\n{body}"
 
     # Write the content to the file

@@ -103,7 +103,7 @@ async function autoSaveEntry() {
     saveIndicator.textContent = "Saving...";
     saveIndicator.classList.add("visible");
 
-    // Convert HTML to Markdown
+    // Convert HTML to Markdown, preserving newlines
     const htmlContent = editorContent.innerHTML;
     console.log("HTML content before conversion:", htmlContent);
     const markdownContent = htmlToMarkdown(htmlContent);
@@ -149,6 +149,50 @@ async function autoSaveEntry() {
   }
 }
 
+// Modify the htmlToMarkdown function to better preserve newlines and spaces
+function htmlToMarkdown(html) {
+  // Replace <div> and <p> with single newlines to preserve paragraph structure
+  let content = html.replace(/<div[^>]*>|<p[^>]*>/gi, "\n");
+
+  // Replace <br> with single newlines
+  content = content.replace(/<br\s*\/?>/gi, "\n");
+
+  // Remove all other HTML tags
+  content = content.replace(/<[^>]+>/g, "");
+
+  // Decode HTML entities
+  content = decodeHTMLEntities(content);
+
+  // Split into lines
+  let lines = content.split(/\n/);
+
+  // Extract the title (first non-empty line)
+  let title = lines.find((line) => line.trim() !== "") || "Untitled";
+
+  // Remove the title from the content
+  let body = lines.slice(lines.indexOf(title) + 1).join("\n");
+
+  // Trim excess whitespace while preserving intentional line breaks
+  body = body
+    .split("\n")
+    .map((line) => line.trim())
+    .join("\n")
+    .trim();
+
+  // Remove any instances of more than two consecutive newlines
+  body = body.replace(/\n{3,}/g, "\n\n");
+
+  // Combine the title and body
+  return `# ${title}\n\n${body}`;
+}
+
+// Helper function to decode HTML entities
+function decodeHTMLEntities(text) {
+  var textArea = document.createElement("textarea");
+  textArea.innerHTML = text;
+  return textArea.value;
+}
+
 // Add this function if it doesn't exist already
 function sendReloadMessageToChainlit(filename) {
   if (window.sendChainlitMessage) {
@@ -166,43 +210,6 @@ function sendReloadMessageToChainlit(filename) {
 function debouncedAutoSave() {
   clearTimeout(autoSaveTimeout);
   autoSaveTimeout = setTimeout(autoSaveEntry, AUTO_SAVE_DELAY);
-}
-
-// Function to convert HTML to Markdown
-function htmlToMarkdown(html) {
-  // Split the HTML content into lines
-  let lines = html
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line);
-
-  // Extract the title (first non-empty line after removing HTML tags)
-  let title = lines[0].replace(/<[^>]+>/g, "").trim();
-
-  // Remove the title from the content
-  let content = lines.slice(1).join("\n");
-
-  // Convert the rest of the content
-  let markdown = content
-    .replace(/<h2>(.*?)<\/h2>/gi, "## $1\n\n")
-    .replace(/<h3>(.*?)<\/h3>/gi, "### $1\n\n")
-    .replace(/<strong>(.*?)<\/strong>/gi, "**$1**")
-    .replace(/<em>(.*?)<\/em>/gi, "*$1*")
-    .replace(/<p>(.*?)<\/p>/gi, "$1\n\n")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<ul>(.*?)<\/ul>/gi, "$1\n")
-    .replace(/<li>(.*?)<\/li>/gi, "- $1\n")
-    .replace(/<ol>(.*?)<\/ol>/gi, "$1\n")
-    .replace(/<li>(.*?)<\/li>/gi, "1. $1\n");
-
-  // Remove any remaining HTML tags
-  markdown = markdown.replace(/<[^>]+>/g, "");
-
-  // Ensure double newlines between paragraphs
-  markdown = markdown.replace(/\n{3,}/g, "\n\n");
-
-  // Combine the title and content
-  return `${title}\n\n${markdown.trim()}`;
 }
 
 // Load entries when the page loads
@@ -327,11 +334,20 @@ async function reloadCurrentJournalEntry() {
       const response = await fetch(`/api/journal-entry/${currentFilename}`);
       if (response.ok) {
         const content = await response.text();
-        editorContent.innerHTML = content;
+        // Convert Markdown to HTML
+        editorContent.innerHTML = markdownToHtml(content);
         console.log("Journal entry reloaded successfully");
 
         // Refresh the entry list on the sidebar
         await loadJournalEntries();
+
+        // Ensure the cursor is placed at the end of the content
+        const range = document.createRange();
+        const sel = window.getSelection();
+        range.selectNodeContents(editorContent);
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
       } else {
         console.error("Failed to reload journal entry");
       }
@@ -339,6 +355,32 @@ async function reloadCurrentJournalEntry() {
       console.error("Error reloading journal entry:", error);
     }
   }
+}
+
+// Add this new function to convert Markdown to HTML
+function markdownToHtml(markdown) {
+  let html = markdown;
+
+  // Convert headers
+  html = html.replace(/^# (.*$)/gim, "<h1>$1</h1>");
+  html = html.replace(/^## (.*$)/gim, "<h2>$1</h2>");
+  html = html.replace(/^### (.*$)/gim, "<h3>$1</h3>");
+
+  // Convert paragraphs and preserve single line breaks
+  html = html
+    .split(/\n/)
+    .map((line) => {
+      if (line.trim().length > 0) {
+        return `<p>${line}</p>`;
+      }
+      return "";
+    })
+    .join("");
+
+  // Convert double line breaks to new paragraphs
+  html = html.replace(/<\/p><p><\/p><p>/g, "</p><p>");
+
+  return html;
 }
 
 // Function to fetch calendar events

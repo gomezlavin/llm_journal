@@ -170,15 +170,17 @@ function debouncedAutoSave() {
 
 // Function to convert HTML to Markdown
 function htmlToMarkdown(html) {
-  // Extract the title (first h1 element)
-  const titleMatch = html.match(/<h1>(.*?)<\/h1>/i);
-  const title = titleMatch ? titleMatch[1] : "Untitled";
+  // Split the HTML content into lines
+  let lines = html
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line);
 
-  // Remove the title from the HTML content
-  let content = html.replace(/<h1>.*?<\/h1>/i, "");
+  // Extract the title (first non-empty line after removing HTML tags)
+  let title = lines[0].replace(/<[^>]+>/g, "").trim();
 
-  // Preserve newlines between paragraphs
-  content = content.replace(/<\/p>\s*<p>/g, "</p>\n\n<p>");
+  // Remove the title from the content
+  let content = lines.slice(1).join("\n");
 
   // Convert the rest of the content
   let markdown = content
@@ -200,7 +202,7 @@ function htmlToMarkdown(html) {
   markdown = markdown.replace(/\n{3,}/g, "\n\n");
 
   // Combine the title and content
-  return `# ${title}\n\n${markdown.trim()}`;
+  return `${title}\n\n${markdown.trim()}`;
 }
 
 // Load entries when the page loads

@@ -124,9 +124,25 @@ def update_entry(filename):
     if not content:
         return jsonify({"error": "No content provided"}), 400
 
-    # The content is already in Markdown format, so we can write it directly
+    # Split the content into lines
+    lines = content.split("\n")
+
+    # Ensure there's at least one line
+    if not lines:
+        return jsonify({"error": "Empty content"}), 400
+
+    # The first non-empty line is the title
+    title = next((line for line in lines if line.strip()), "Untitled")
+
+    # The rest is the content
+    body = "\n".join(lines[1:]).strip()
+
+    # Combine title and body
+    full_content = f"{title}\n\n{body}"
+
+    # Write the content to the file
     with open(file_path, "w") as f:
-        f.write(content)
+        f.write(full_content)
 
     return jsonify({"message": "Entry updated successfully"})
 

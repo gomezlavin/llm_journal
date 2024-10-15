@@ -7,7 +7,11 @@ from google.auth.exceptions import RefreshError
 from llama_index.core import VectorStoreIndex, Document, Settings
 import os
 from llama_index.embeddings.ollama import OllamaEmbedding
-from llama_index.embeddings.openai import OpenAIEmbedding  # Add this import
+from llama_index.embeddings.openai import OpenAIEmbedding
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Define and export CACHE_FILE
 CACHE_FILE = os.path.join("data", "calendar_cache.json")
@@ -27,7 +31,7 @@ OLLAMA_EMBEDDING_CONFIG = {
 
 # OpenAI embedding configuration
 OPENAI_EMBEDDING_CONFIG = {
-    "model": "text-embedding-ada-002",  # or whichever model you prefer
+    "model": "text-embedding-ada-002",
     "api_key": os.getenv("OPENAI_API_KEY"),
 }
 
@@ -59,7 +63,7 @@ def fetch_and_filter_calendar_events(target_date=None, force_refresh=False):
         if not force_refresh:
             cached_events = load_cache()
             if cached_events:
-                return cached_events["all_events"], []
+                return cached_events["all_events"], cached_events["todays_events"]
 
         calendar_documents = calendar_reader.load_data(
             number_of_results=100,
@@ -77,13 +81,23 @@ def fetch_and_filter_calendar_events(target_date=None, force_refresh=False):
             <= end_date
         ]
 
+        todays_events = [
+            event
+            for event in filtered_events
+            if datetime.datetime.fromisoformat(
+                re.search(r"Start time: (\S+)", event).group(1).rstrip(",")
+            ).date()
+            == target_date
+        ]
+
         save_cache(
             {
                 "all_events": filtered_events,
+                "todays_events": todays_events,
                 "last_updated": datetime.datetime.now().isoformat(),
             }
         )
-        return filtered_events, []
+        return filtered_events, todays_events
     except RefreshError as e:
         print(f"Error refreshing Google Calendar token: {e}")
         raise

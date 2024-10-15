@@ -40,6 +40,9 @@ async function loadEntry(filename) {
 
     await reloadCurrentJournalEntry();
 
+    // Add event listener for auto-save
+    editorContent.addEventListener("input", debouncedAutoSave);
+
     // Focus on the editor content
     editorContent.focus();
 
@@ -71,10 +74,15 @@ async function loadEntry(filename) {
   }
 }
 
-// Function to auto-save the entry
+// Add these variables at the top of the file, after other imports
+let autoSaveTimeout;
+const AUTO_SAVE_DELAY = 2000; // 2 seconds
+
+// Modify the existing autoSaveEntry function
 async function autoSaveEntry() {
   const editorContent = document.getElementById("editor-content");
   const currentFilename = editorContent.dataset.currentFilename;
+  const saveIndicator = document.getElementById("save-indicator");
 
   if (!currentFilename) {
     console.error("No current filename found for auto-save");
@@ -82,6 +90,9 @@ async function autoSaveEntry() {
   }
 
   try {
+    saveIndicator.textContent = "Saving...";
+    saveIndicator.classList.add("visible");
+
     // Convert HTML to Markdown
     const markdownContent = htmlToMarkdown(editorContent.innerHTML);
 
@@ -98,12 +109,31 @@ async function autoSaveEntry() {
     }
 
     console.log("Entry auto-saved successfully");
+    saveIndicator.textContent = "Saved";
+
+    // Hide the save indicator after 2 seconds
+    setTimeout(() => {
+      saveIndicator.classList.remove("visible");
+    }, 2000);
 
     // Refresh the entry list on the sidebar
     await loadJournalEntries();
   } catch (error) {
     console.error("Error auto-saving entry:", error);
+    saveIndicator.textContent = "Save failed";
+    saveIndicator.classList.add("error");
+
+    // Hide the save indicator after 2 seconds
+    setTimeout(() => {
+      saveIndicator.classList.remove("visible", "error");
+    }, 2000);
   }
+}
+
+// Add this new function for debounced auto-save
+function debouncedAutoSave() {
+  clearTimeout(autoSaveTimeout);
+  autoSaveTimeout = setTimeout(autoSaveEntry, AUTO_SAVE_DELAY);
 }
 
 // Function to convert HTML to Markdown
@@ -133,15 +163,6 @@ function htmlToMarkdown(html) {
 
   // Combine the title and content
   return `# ${title}\n\n${markdown.trim()}`;
-}
-
-// Debounce function to limit the frequency of auto-saves
-function debounce(func, delay) {
-  let timeoutId;
-  return function (...args) {
-    clearTimeout(timeoutId);
-    timeoutId = setTimeout(() => func.apply(this, args), delay);
-  };
 }
 
 // Load entries when the page loads
@@ -236,7 +257,7 @@ async function createNewEntry() {
     editorContent.classList.remove("placeholder");
 
     // Add event listener for auto-save
-    editorContent.addEventListener("input", debounce(autoSaveEntry, 1000));
+    editorContent.addEventListener("input", debouncedAutoSave);
 
     // Focus the editor and place cursor after the title
     editorContent.focus();

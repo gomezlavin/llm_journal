@@ -156,3 +156,26 @@ html {
 #chainlit-copilot-popover {
   height: min(503px, -208px + 100vh);
 }
+
+/* Add these styles at the end of the file */
+.save-indicator {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background-color: #4CAF50;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 14px;
+  opacity: 0;
+  transition: opacity 0.3s ease-in-out;
+  z-index: 1000;
+}
+
+.save-indicator.visible {
+  opacity: 1;
+}
+
+.save-indicator.error {
+  background-color: #f44336;
+}

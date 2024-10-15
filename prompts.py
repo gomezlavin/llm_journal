@@ -59,6 +59,7 @@ You are an AI assistant helping to write a journal entry. Your task is to take t
 6. Maintain a consistent tone and style throughout the entry.
 7. If the user refers to items or topics from the recent conversation, incorporate them appropriately.
 8. The final output should be the complete, updated journal entry.
+9. Use simple, succinct English.
 
 Existing journal entry:
 {existing_entry}

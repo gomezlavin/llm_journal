@@ -4,7 +4,6 @@ import datetime
 import asyncio
 from dotenv import load_dotenv
 from prompts import SYSTEM_PROMPT, JOURNAL_PROMPT
-from langsmith.wrappers import wrap_openai
 from llama_index.core import VectorStoreIndex, Document, Settings
 from typing import Dict, List, Tuple
 import os
@@ -49,14 +48,12 @@ print(f"AI Provider: {'Ollama' if USE_OLLAMA else 'OpenAI'}")
 
 # Initialize services
 if USE_OLLAMA:
-    client = wrap_openai(
-        openai.AsyncClient(
-            api_key="ollama",  # required, but unused
-            base_url="http://localhost:11434/v1",
-        )
+    client = AsyncOpenAI(
+        api_key="ollama",  # required, but unused
+        base_url="http://localhost:11434/v1",
     )
 else:
-    client = wrap_openai(openai.AsyncClient(api_key=config["api_key"]))
+    client = AsyncOpenAI(api_key=config["api_key"])
 
 
 # Helper functions

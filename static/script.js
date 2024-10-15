@@ -154,6 +154,7 @@ window.addEventListener("load", async () => {
 
   // Mount Chainlit widget with updated configuration
   window.mountChainlitWidget({
+    containerId: "toggle-sidebar-btn",
     chainlitServer: "http://localhost:8000",
     button: {
       style: {
@@ -393,3 +394,20 @@ async function updateRightSidebarEvents(filename) {
     updateCalendarSidebar([], filename.split("-").slice(0, 3).join("-"));
   }
 }
+
+document.addEventListener("DOMContentLoaded", function () {
+  const toggleSidebarBtn = document.getElementById("toggle-sidebar-btn");
+  const rightSidebar = document.getElementById("right-sidebar");
+
+  toggleSidebarBtn.addEventListener("click", function () {
+    rightSidebar.classList.toggle("hidden");
+    toggleSidebarBtn.classList.toggle("sidebar-hidden");
+
+    // Update the emoji based on the sidebar state
+    if (rightSidebar.classList.contains("hidden")) {
+      toggleSidebarBtn.textContent = "🗄️";
+    } else {
+      toggleSidebarBtn.textContent = "📁";
+    }
+  });
+});

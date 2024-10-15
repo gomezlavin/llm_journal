@@ -30,7 +30,7 @@ html {
 }
 
 .right-sidebar.hidden {
-  transform: translateX(400px);
+  display: none;
 }
 
 .entry-list {
@@ -118,14 +118,10 @@ html {
 }
 
 .toggle-sidebar-btn {
-  position: absolute;
+  position: fixed;
+  right: 10px;
   top: 10px;
-  left: 10px;
-  padding: 5px 10px;
-  background-color: #f5f5f5;
-  border: 1px solid #ccc;
-  border-radius: 5px;
-  cursor: pointer;
+  z-index: 1000;
 }
 
 .event-list {

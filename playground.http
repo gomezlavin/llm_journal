@@ -1,1 +1,1 @@
-GET http://localhost:5001/api/calendar-events/
+GET http://localhost:5001/api/calendar-events/2024-10-15

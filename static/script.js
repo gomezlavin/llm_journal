@@ -118,6 +118,9 @@ async function autoSaveEntry() {
 
     // Refresh the entry list on the sidebar
     await loadJournalEntries();
+
+    // Simulate clicking on the entry to reload it in Chainlit copilot
+    await loadEntry(currentFilename);
   } catch (error) {
     console.error("Error auto-saving entry:", error);
     saveIndicator.textContent = "Save failed";
@@ -128,6 +131,14 @@ async function autoSaveEntry() {
       saveIndicator.classList.remove("visible", "error");
     }, 2000);
   }
+}
+
+// Add this new function to send a reload message to Chainlit
+function sendReloadMessageToChainlit(filename) {
+  window.sendChainlitMessage({
+    type: "system_message",
+    output: JSON.stringify({ action: "reload_entry", filename: filename }),
+  });
 }
 
 // Add this new function for debounced auto-save

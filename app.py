@@ -244,12 +244,12 @@ async def on_message(message: cl.Message):
     current_entry = cl.user_session.get("current_entry")
     calendar_index = cl.user_session.get("calendar_index")
 
-    # Check if the message is a system message for loading an entry
+    # Check if the message is a system message for loading or reloading an entry
     if message.type == "system_message":
         print("1. System message")
         try:
             data = json.loads(message.content)
-            if data.get("action") == "load_entry":
+            if data.get("action") in ["load_entry", "reload_entry"]:
                 filename = data.get("filename")
                 if filename:
                     # Load the journal entry
@@ -259,16 +259,19 @@ async def on_message(message: cl.Message):
                     # Update the current entry
                     cl.user_session.set("current_entry", filename)
 
-                    # Inform the user that the entry has been loaded
+                    # Inform the user that the entry has been loaded or reloaded
+                    action_verb = (
+                        "reloaded" if data.get("action") == "reload_entry" else "loaded"
+                    )
                     await cl.Message(
-                        content=f"Journal entry '{filename}' has been loaded. How can I assist you with this entry?"
+                        content=f"Journal entry '{filename}' has been {action_verb}. How can I assist you with this entry?"
                     ).send()
 
                     # Update the message history with the loaded entry
                     message_history.append(
                         {
                             "role": "system",
-                            "content": f"Loaded journal entry: {filename}\n\n{entry_content}",
+                            "content": f"{action_verb.capitalize()} journal entry: {filename}\n\n{entry_content}",
                         }
                     )
                     cl.user_session.set("message_history", message_history)

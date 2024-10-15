@@ -4,14 +4,32 @@ import datetime
 import re
 import json
 from google.auth.exceptions import RefreshError
-from llama_index.core import VectorStoreIndex, Document
+from llama_index.core import VectorStoreIndex, Document, Settings
 import os
+from llama_index.embeddings.ollama import OllamaEmbedding
+from llama_index.embeddings.openai import OpenAIEmbedding  # Add this import
 
 # Define and export CACHE_FILE
 CACHE_FILE = os.path.join("data", "calendar_cache.json")
 
 # Add this line near the top of the file, after imports
 calendar_reader = GoogleCalendarReader()
+
+# Choose AI provider
+USE_OLLAMA = os.getenv("OLLAMA") == "1"
+
+# Ollama embedding configuration
+OLLAMA_EMBEDDING_CONFIG = {
+    "model_name": os.getenv("OLLAMA_MODEL", "llama3.2"),
+    "base_url": os.getenv("OLLAMA_ENDPOINT", "http://localhost:11434"),
+    "ollama_additional_kwargs": {"mirostat": 0},
+}
+
+# OpenAI embedding configuration
+OPENAI_EMBEDDING_CONFIG = {
+    "model": "text-embedding-ada-002",  # or whichever model you prefer
+    "api_key": os.getenv("OPENAI_API_KEY"),
+}
 
 
 def load_cache():
@@ -70,6 +88,15 @@ async def create_calendar_index():
             Document(text=event, metadata={"source": "calendar"})
             for event in all_events
         ]
+
+        if USE_OLLAMA:
+            ollama_embedding = OllamaEmbedding(**OLLAMA_EMBEDDING_CONFIG)
+            Settings.embed_model = ollama_embedding
+        else:
+            openai_embedding = OpenAIEmbedding(**OPENAI_EMBEDDING_CONFIG)
+            Settings.embed_model = openai_embedding
+
+        # Create the index with the appropriate embedding
         index = VectorStoreIndex.from_documents(documents)
         return index, todays_events
     except RefreshError as e:

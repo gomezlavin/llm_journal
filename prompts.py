@@ -72,9 +72,16 @@ Remember, your role is to guide and facilitate through questions, not to write t
 
 
 JOURNAL_PROMPT = """
-Given the prompt and conversation history, update the journal entry with a new sentence or two augmenting the existing entry.
+Given the prompt and conversation history, update the journal entry following these guidelines:
 
-Do not make things up. Write simple sentences or partial sentences for the user to continue writing.
+1. Do not overwrite or modify any existing content except for the last sentence.
+2. If the new input is about the same topic as the last sentence:
+   - Rewrite and expand only the last sentence to incorporate the new information.
+3. If the new input is about a different topic:
+   - Start a new paragraph for the new content.
+4. Always preserve the existing content of the journal entry.
 
-Only include the journal entry in your response. Don't ask the user questions in the response.
+Write simple sentences or partial sentences for the user to continue writing. Do not make things up or add fictional details.
+
+Only include the updated journal entry in your response. Don't ask the user questions in the response.
 """

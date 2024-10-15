@@ -181,23 +181,28 @@ def generate_unique_filename():
     return f"{today}-{timestamp}-entry.md"
 
 
-async def update_journal_file(message_history: List[Dict[str, str]]):
-    filename = generate_unique_filename()
+async def update_journal_file(filename: str, new_content: str):
     file_path = os.path.join("data", filename)
+
+    # Read existing content
+    with open(file_path, "r") as f:
+        existing_content = f.read().strip()
 
     # Prepare the prompt for the LLM
     prompt = (
         JOURNAL_PROMPT
-        + "\n\nConversation:\n"
-        + "\n".join([f"{msg['role']}: {msg['content']}" for msg in message_history])
+        + "\n\nExisting entry:\n"
+        + existing_content
+        + "\n\nNew input:\n"
+        + new_content  # Use the new_content directly
     )
 
     # Generate journal entry using LLM
-    journal_entry = await generate_journal_entry(prompt)
+    updated_entry = await generate_journal_entry(prompt)
 
-    # Write the generated entry to the file
+    # Write the updated entry to the file
     with open(file_path, "w") as f:
-        f.write(journal_entry.strip())
+        f.write(updated_entry.strip())
 
     return filename
 
@@ -322,8 +327,7 @@ async def on_message(message: cl.Message):
 
     # Only update the current journal entry if one is loaded
     if current_entry:
-        updated_filename = await update_journal_file(current_entry, message_history)
-
+        updated_filename = await update_journal_file(current_entry, message.content)
         # Use CopilotFunction to notify the frontend
         if cl.context.session.client_type == "copilot":
             fn = cl.CopilotFunction(
@@ -338,21 +342,27 @@ async def on_action(action):
 
 
 # Update this function to handle journal updates for a specific entry
-async def update_journal_file(filename: str, message_history: List[Dict[str, str]]):
+async def update_journal_file(filename: str, new_content: str):
     file_path = os.path.join("data", filename)
+
+    # Read existing content
+    with open(file_path, "r") as f:
+        existing_content = f.read().strip()
 
     # Prepare the prompt for the LLM
     prompt = (
         JOURNAL_PROMPT
-        + "\n\nConversation:\n"
-        + "\n".join([f"{msg['role']}: {msg['content']}" for msg in message_history])
+        + "\n\nExisting entry:\n"
+        + existing_content
+        + "\n\nNew input:\n"
+        + new_content  # Use the new_content directly
     )
 
     # Generate journal entry using LLM
-    journal_entry = await generate_journal_entry(prompt)
+    updated_entry = await generate_journal_entry(prompt)
 
-    # Write the generated entry to the file
+    # Write the updated entry to the file
     with open(file_path, "w") as f:
-        f.write(journal_entry.strip())
+        f.write(updated_entry.strip())
 
     return filename

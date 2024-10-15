@@ -132,8 +132,8 @@ async function autoSaveEntry() {
     // Refresh the entry list on the sidebar
     await loadJournalEntries();
 
-    // Simulate clicking on the entry to reload it in Chainlit copilot
-    await loadEntry(currentFilename);
+    // Reload the current entry to show the updated content
+    await reloadCurrentJournalEntry();
   } catch (error) {
     console.error("Error auto-saving entry:", error);
     saveIndicator.textContent = "Save failed";

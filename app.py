@@ -189,12 +189,8 @@ async def update_journal_file(filename: str, new_content: str):
         existing_content = f.read().strip()
 
     # Prepare the prompt for the LLM
-    prompt = (
-        JOURNAL_PROMPT
-        + "\n\nExisting entry:\n"
-        + existing_content
-        + "\n\nNew input:\n"
-        + new_content  # Use the new_content directly
+    prompt = JOURNAL_PROMPT.format(
+        existing_entry=existing_content, new_input=new_content
     )
 
     # Generate journal entry using LLM
@@ -353,12 +349,8 @@ async def update_journal_file(filename: str, new_content: str):
         existing_content = f.read().strip()
 
     # Prepare the prompt for the LLM
-    prompt = (
-        JOURNAL_PROMPT
-        + "\n\nExisting entry:\n"
-        + existing_content
-        + "\n\nNew input:\n"
-        + new_content  # Use the new_content directly
+    prompt = JOURNAL_PROMPT.format(
+        existing_entry=existing_content, new_input=new_content
     )
 
     # Generate journal entry using LLM

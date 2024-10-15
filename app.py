@@ -4,116 +4,62 @@ import datetime
 import asyncio
 from dotenv import load_dotenv
 from prompts import SYSTEM_PROMPT, JOURNAL_PROMPT
-from custom_calendar_reader import GoogleCalendarReader
 from langsmith.wrappers import wrap_openai
-from llama_index.core import VectorStoreIndex, Document
+from llama_index.core import VectorStoreIndex, Document, Settings
 from typing import Dict, List, Tuple
 import os
 import json
 from google.auth.exceptions import RefreshError
 import re
-
-# Load environment variables
-load_dotenv()
-
+from calendar_utils import (
+    CACHE_FILE,
+    create_calendar_index,
+    fetch_and_filter_calendar_events,
+)
+from llama_index.embeddings.ollama import OllamaEmbedding
 from langfuse.decorators import observe
 from langfuse.openai import AsyncOpenAI
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
 
 from journal_functions import get_top_news, journal_search, calendar_search
 
+# Load environment variables
+load_dotenv()
+
 function_names = ["get_top_news", "journal_search", "calendar_search"]
 
 # Configuration
-openai_config = {
-    "endpoint_url": os.getenv("OPENAI_ENDPOINT"),
-    "api_key": os.getenv("OPENAI_API_KEY"),
-    "model": "gpt-4o",
-}
+USE_OLLAMA = os.getenv("OLLAMA") == "1"
 
-ollama_config = {
-    "endpoint_url": os.getenv("OLLAMA_ENDPOINT", "http://localhost:11434/v1"),
-    "api_key": "ollama",  # Ollama doesn't require an API key, but we need to provide something
-    "model": os.getenv("OLLAMA_MODEL", "llama3.2"),
-}
+if USE_OLLAMA:
+    config = {
+        "endpoint_url": os.getenv("OLLAMA_ENDPOINT", "http://localhost:11434/v1"),
+        "api_key": "ollama",  # Ollama doesn't require an API key, but we need to provide something
+        "model": os.getenv("OLLAMA_MODEL", "llama3.2"),
+    }
+else:
+    config = {
+        "endpoint_url": os.getenv("OPENAI_ENDPOINT"),
+        "api_key": os.getenv("OPENAI_API_KEY"),
+        "model": "gpt-4",
+    }
 
-# Choose AI provider (set this to 'ollama' or 'openai')
-ai_provider = "ollama" if os.getenv("OLLAMA") == "1" else "openai"
-
-# You can also add a print statement for debugging:
-print(f"AI Provider: {ai_provider}")
+print(f"AI Provider: {'Ollama' if USE_OLLAMA else 'OpenAI'}")
 
 # Initialize services
-if ai_provider == "openai":
-    config = openai_config
-else:
-    config = ollama_config
-
 client = wrap_openai(
     openai.AsyncClient(api_key=config["api_key"], base_url=config["endpoint_url"])
 )
-calendar_reader = GoogleCalendarReader()
-
-
-async def create_calendar_index():
-    try:
-        all_events, todays_events = await fetch_and_filter_calendar_events()
-        documents = [
-            Document(text=event, metadata={"source": "calendar"})
-            for event in all_events
-        ]
-        index = VectorStoreIndex.from_documents(documents)
-        return index, todays_events
-    except RefreshError as e:
-        print(f"Error refreshing Google Calendar token: {e}")
-        return None, []
 
 
 # Helper functions
-async def fetch_and_filter_calendar_events() -> Tuple[List[str], List[str]]:
-    today = datetime.date.today()
-    start_of_week = today - datetime.timedelta(days=today.weekday())
+async def load_cache():
     try:
-        calendar_documents = calendar_reader.load_data(
-            number_of_results=100,
-            start_date=start_of_week,
-            local_data_filename=os.getenv("GCAL_TEST_DATAFILE"),
-        )
-        all_events = [event.text for event in calendar_documents]
-        todays_events = []
-        for event in calendar_documents:
-            start_time_match = re.search(r"Start time: (\S+)", event.text)
-            if start_time_match:
-                start_time_str = start_time_match.group(1).rstrip(",")
-                try:
-                    start_time = datetime.datetime.fromisoformat(start_time_str)
-                    if start_time.date() == today:
-                        todays_events.append(event.text)
-                except ValueError as e:
-                    print(f"Error parsing date for event: {event.text}. Error: {e}")
-        return all_events, todays_events[:10]
-    except RefreshError as e:
-        print(f"Error refreshing Google Calendar token: {e}")
-        raise
-    except Exception as e:
-        print(f"Error fetching calendar events: {e}")
-        return [], []
-
-
-@observe
-async def generate_response(message_history):
-    gen_kwargs = {
-        "model": config["model"],
-        "temperature": 0.3,
-        "max_tokens": 500,
-    }
-
-    response = await client.chat.completions.create(
-        messages=message_history, **gen_kwargs
-    )
-    response_text = response.choices[0].message.content
-
-    return response_text
+        with open(CACHE_FILE, "r") as f:
+            cache = json.load(f)
+        return cache["events"]
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        return None
 
 
 # Add this new function to handle re-authentication
@@ -126,10 +72,6 @@ async def handle_reauth():
     await cl.Message(
         content="The old token has been removed. Please restart the application to re-authenticate."
     ).send()
-
-    # Reinitialize the calendar reader
-    global calendar_reader
-    calendar_reader = GoogleCalendarReader()
 
     # Attempt to fetch calendar events to trigger the authentication flow
     try:
@@ -156,13 +98,11 @@ async def on_chat_start():
             content="I'm having trouble accessing your calendar. You may need to re-authenticate."
         ).send()
 
-        # Add a button for re-authentication
         actions = [cl.Action(name="reauth", value="reauth", label="Re-authenticate")]
         await cl.Message(
             content="Click the button below to re-authenticate:", actions=actions
         ).send()
     else:
-        # Inform the user about the number of events loaded
         total_events = len(calendar_index.docstore.docs)
         today_event_count = len(todays_events)
         await cl.Message(
@@ -171,7 +111,6 @@ async def on_chat_start():
 
     cl.user_session.set("calendar_index", calendar_index)
 
-    # Initialize message history with system prompt and today's events (without displaying them)
     events_summary = f"Today's events: {len(todays_events)}"
     message_history = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -183,20 +122,21 @@ async def on_chat_start():
 
 
 def extract_json_from_response(text):
-    # Regex pattern to find JSON block enclosed in ```json ... ```
-    json_pattern = r"```json(.*?)```"
-
-    # Search for the JSON block in the response
+    # First, try to find JSON block enclosed in ```json ... ```
+    json_pattern = r"```(json)?(.*?)```"
     json_match = re.search(json_pattern, text, re.DOTALL)
 
     if json_match:
-        json_str = json_match.group(1).strip()  # Extract the JSON block
-        try:
-            parsed_json = json.loads(json_str)  # Parse the JSON block
-            return parsed_json
-        except json.JSONDecodeError as e:
-            return None
+        json_str = json_match.group(2).strip()
     else:
+        # If no code block is found, treat the entire text as potential JSON
+        json_str = text.strip()
+
+    try:
+        parsed_json = json.loads(json_str)
+        return parsed_json
+    except json.JSONDecodeError as e:
+        print(f"JSON parsing error: {e}")
         return None
 
 
@@ -241,23 +181,28 @@ def generate_unique_filename():
     return f"{today}-{timestamp}-entry.md"
 
 
-async def update_journal_file(message_history: List[Dict[str, str]]):
-    filename = generate_unique_filename()
+async def update_journal_file(filename: str, new_content: str):
     file_path = os.path.join("data", filename)
+
+    # Read existing content
+    with open(file_path, "r") as f:
+        existing_content = f.read().strip()
 
     # Prepare the prompt for the LLM
     prompt = (
         JOURNAL_PROMPT
-        + "\n\nConversation:\n"
-        + "\n".join([f"{msg['role']}: {msg['content']}" for msg in message_history])
+        + "\n\nExisting entry:\n"
+        + existing_content
+        + "\n\nNew input:\n"
+        + new_content  # Use the new_content directly
     )
 
     # Generate journal entry using LLM
-    journal_entry = await generate_journal_entry(prompt)
+    updated_entry = await generate_journal_entry(prompt)
 
-    # Write the generated entry to the file
+    # Write the updated entry to the file
     with open(file_path, "w") as f:
-        f.write(journal_entry.strip())
+        f.write(updated_entry.strip())
 
     return filename
 
@@ -275,6 +220,22 @@ async def generate_journal_entry(prompt: str) -> str:
     journal_entry = response.choices[0].message.content
 
     return journal_entry
+
+
+@observe
+async def generate_response(message_history):
+    gen_kwargs = {
+        "model": config["model"],
+        "temperature": 0.3,
+        "max_tokens": 500,
+    }
+
+    response = await client.chat.completions.create(
+        messages=message_history, **gen_kwargs
+    )
+    response_text = response.choices[0].message.content
+
+    return response_text
 
 
 @cl.on_message
@@ -320,10 +281,11 @@ async def on_message(message: cl.Message):
 
     response_text = await generate_response(message_history)
 
-    print("Response text")
+    print("Response:")
     print(response_text)
     try:
         parsed_json = extract_json_from_response(response_text)
+        print(f"Parsed JSON: {parsed_json}")
 
         if (
             parsed_json
@@ -332,15 +294,32 @@ async def on_message(message: cl.Message):
         ):
             matched_function = parsed_json["function_name"]
             print(f"Matched function: {matched_function}")
+            print(f"Function parameters: {parsed_json.get('params', {})}")
 
             function_response = await call_function(parsed_json)
-            message_history.append({"role": "system", "content": function_response})
+            message_history.append(
+                {
+                    "role": "assistant",
+                    "content": f"Respond using the following function call result: {function_response}",
+                }
+            )
             print(f"Function response: {function_response}")
-            response_text = await generate_response(message_history)
-            print(f"Generate response: {response_text}")
 
-    except json.JSONDecodeError as e:
-        print(f"JSONDecodeError: {e}")
+            # Only generate a new response if the function_response is not an error message
+            if not function_response.startswith(
+                "Calendar information is unavailable"
+            ) and not function_response.startswith(
+                "I'm having trouble accessing your calendar"
+            ):
+                response_text = await generate_response(message_history)
+                print(f"Generate response: {response_text}")
+            else:
+                response_text = function_response
+        else:
+            print("No valid function call found in the response")
+
+    except Exception as e:
+        print(f"Error in JSON processing: {e}")
 
     response_message = await print_response(response_text)
     message_history.append({"role": "assistant", "content": response_text})
@@ -348,8 +327,7 @@ async def on_message(message: cl.Message):
 
     # Only update the current journal entry if one is loaded
     if current_entry:
-        updated_filename = await update_journal_file(current_entry, message_history)
-
+        updated_filename = await update_journal_file(current_entry, message.content)
         # Use CopilotFunction to notify the frontend
         if cl.context.session.client_type == "copilot":
             fn = cl.CopilotFunction(
@@ -364,21 +342,27 @@ async def on_action(action):
 
 
 # Update this function to handle journal updates for a specific entry
-async def update_journal_file(filename: str, message_history: List[Dict[str, str]]):
+async def update_journal_file(filename: str, new_content: str):
     file_path = os.path.join("data", filename)
+
+    # Read existing content
+    with open(file_path, "r") as f:
+        existing_content = f.read().strip()
 
     # Prepare the prompt for the LLM
     prompt = (
         JOURNAL_PROMPT
-        + "\n\nConversation:\n"
-        + "\n".join([f"{msg['role']}: {msg['content']}" for msg in message_history])
+        + "\n\nExisting entry:\n"
+        + existing_content
+        + "\n\nNew input:\n"
+        + new_content  # Use the new_content directly
     )
 
     # Generate journal entry using LLM
-    journal_entry = await generate_journal_entry(prompt)
+    updated_entry = await generate_journal_entry(prompt)
 
-    # Write the generated entry to the file
+    # Write the updated entry to the file
     with open(file_path, "w") as f:
-        f.write(journal_entry.strip())
+        f.write(updated_entry.strip())
 
     return filename

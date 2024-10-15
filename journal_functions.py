@@ -3,38 +3,40 @@ import requests
 import chainlit as cl
 import asyncio
 from serpapi import GoogleSearch
-from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
+from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings
+from llama_index.embeddings.ollama import OllamaEmbedding
+
 
 async def get_top_news():
     # Set up parameters for the API call
     params = {
-        "api_key": os.getenv('SERP_API_KEY'),
+        "api_key": os.getenv("SERP_API_KEY"),
         "engine": "google",
         "q": "top news articles",
         "google_domain": "google.com",
         "gl": "us",
         "hl": "en",
-        "tbm": "nws"
+        "tbm": "nws",
     }
 
     # Perform the API search
     search = GoogleSearch(params)
     results = search.get_dict()
-    
+
     # Check if 'news_results' are present in the API response
-    if 'news_results' not in results:
+    if "news_results" not in results:
         return "No top news found."
 
     # Initialize a string to format the output
     formatted_news = "Top News Headlines:\n\n"
 
     # Iterate through each news result and format the response
-    for news in results['news_results']:
-        title = news.get('title', 'No Title')
-        source = news.get('source', 'Unknown Source')
-        date = news.get('date', 'Unknown Date')
-        link = news.get('link', '#')
-        snippet = news.get('snippet', 'No description available.')
+    for news in results["news_results"]:
+        title = news.get("title", "No Title")
+        source = news.get("source", "Unknown Source")
+        date = news.get("date", "Unknown Date")
+        link = news.get("link", "#")
+        snippet = news.get("snippet", "No description available.")
 
         # Append formatted news item to the output string
         formatted_news += f"**{title}**\n"
@@ -45,8 +47,21 @@ async def get_top_news():
     # Return the formatted news headlines
     return formatted_news
 
+
 async def journal_search(query):
     documents = SimpleDirectoryReader("data").load_data()
+
+    if os.getenv("OLLAMA") == "1":
+        ollama_embedding_config = {
+            "model_name": os.getenv("OLLAMA_MODEL", "llama3.2"),
+            "base_url": os.getenv("OLLAMA_ENDPOINT", "http://localhost:11434"),
+            "ollama_additional_kwargs": {"mirostat": 0},
+        }
+        ollama_embedding = OllamaEmbedding(**ollama_embedding_config)
+        Settings.embed_model = ollama_embedding
+    else:
+        # Reset to default embedding if OLLAMA is not set to "1"
+        Settings.embed_model = None
 
     # Create an index from the documents
     index = VectorStoreIndex.from_documents(documents)
@@ -60,41 +75,51 @@ async def journal_search(query):
 
     return response
 
+
 async def calendar_search(query):
     calendar_index = cl.user_session.get("calendar_index")
-    response = "Calendar information is currently unavailable."
 
     if calendar_index:
-        print("2a. Calendar index")
         try:
             query_engine = calendar_index.as_query_engine()
+
+            # Add debugging information
+            print(f"Query engine type: {type(query_engine)}")
+            print(f"Query: {query}")
+
             query_result = query_engine.query(query)
 
-            response = query_result
-            print("respnse from calendar_search")
+            response = str(query_result)
+            print("Response from calendar_search:")
             print(response)
-            if query_result.response:
-                response = f"Relevant calendar information: {query_result.response}"
+            return response
         except Exception as e:
             print(f"Error querying calendar index: {e}")
-            response = "I'm having trouble accessing your calendar information at the moment."
+            print(f"Error type: {type(e).__name__}")
+            print(f"Error details: {str(e)}")
+
+            error_message = (
+                "I'm having trouble accessing your calendar information at the moment. "
+                "There might be an issue with the calendar data or the query processing."
+            )
 
             # Add a button for re-authentication when there's an error
             actions = [
                 cl.Action(name="reauth", value="reauth", label="Re-authenticate")
             ]
             await cl.Message(
-                content="There seems to be an issue with your calendar access. Would you like to re-authenticate?",
+                content=f"{error_message} Would you like to re-authenticate?",
                 actions=actions,
             ).send()
+            return error_message
     else:
-        print("2b. Not calendar index")
+        print("Calendar index not available")
+        error_message = "Calendar information is unavailable."
 
-    # Add a button for re-authentication when calendar index is not available
-    actions = [cl.Action(name="reauth", value="reauth", label="Re-authenticate")]
-    await cl.Message(
-        content="Calendar information is unavailable. Would you like to re-authenticate?",
-        actions=actions,
-    ).send()
-
-    return response
+        # Add a button for re-authentication when calendar index is not available
+        actions = [cl.Action(name="reauth", value="reauth", label="Re-authenticate")]
+        await cl.Message(
+            content=f"{error_message} Would you like to re-authenticate?",
+            actions=actions,
+        ).send()
+        return error_message

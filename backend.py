@@ -1,12 +1,37 @@
 from flask import Flask, jsonify, send_file, send_from_directory, request
 import os
 import markdown
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
 import html2text
-from calendar_utils import fetch_and_filter_calendar_events
+import json
+from calendar_utils import CACHE_FILE, fetch_and_filter_calendar_events
+import logging
 
 app = Flask(__name__, static_folder="static")
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+
+# Update the CACHE_FILE path
+CACHE_EXPIRY = timedelta(hours=1)
+
+
+def load_cache():
+    try:
+        with open(CACHE_FILE, "r") as f:
+            cache = json.load(f)
+        if datetime.fromisoformat(cache["timestamp"]) + CACHE_EXPIRY > datetime.now():
+            return cache["events"]
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        pass
+    return None
+
+
+def save_cache(events):
+    cache = {"timestamp": datetime.now().isoformat(), "events": events}
+    with open(CACHE_FILE, "w") as f:
+        json.dump(cache, f)
 
 
 def generate_unique_filename():
@@ -17,6 +42,7 @@ def generate_unique_filename():
 
 @app.route("/api/journal-entries")
 def get_journal_entries():
+    logging.info("GET /api/journal-entries")
     entries = []
     for filename in os.listdir("data"):
         if filename.endswith(".md"):
@@ -43,6 +69,7 @@ def get_journal_entries():
 
 @app.route("/api/journal-entry/<filename>")
 def get_journal_entry(filename):
+    logging.info(f"GET /api/journal-entry/{filename}")
     file_path = os.path.join("data", filename)
     if os.path.exists(file_path):
         with open(file_path, "r") as f:
@@ -55,16 +82,19 @@ def get_journal_entry(filename):
 
 @app.route("/")
 def serve_journal():
+    logging.info("GET /")
     return send_file("journal.html")
 
 
 @app.route("/static/<path:path>")
 def serve_static(path):
+    logging.info(f"GET /static/{path}")
     return send_from_directory("static", path)
 
 
 @app.route("/api/new-entry", methods=["POST"])
 def create_new_entry():
+    logging.info("POST /api/new-entry")
     filename = generate_unique_filename()
     title = f"Today, ..."
     file_path = os.path.join("data", filename)
@@ -85,6 +115,7 @@ def create_new_entry():
 
 @app.route("/api/update-entry/<filename>", methods=["POST"])
 def update_entry(filename):
+    logging.info(f"POST /api/update-entry/{filename}")
     file_path = os.path.join("data", filename)
     if not os.path.exists(file_path):
         return jsonify({"error": "Entry not found"}), 404
@@ -102,15 +133,29 @@ def update_entry(filename):
 
 @app.route("/api/calendar-events")
 def get_calendar_events():
+    logging.info("GET /api/calendar-events")
+    force_refresh = request.args.get("refresh", "").lower() == "true"
+    cached_events = None if force_refresh else load_cache()
+
+    if cached_events:
+        return jsonify(cached_events)
+
     try:
         all_events, todays_events = fetch_and_filter_calendar_events()
-        return jsonify({"all_events": all_events, "todays_events": todays_events})
+        events = {"all_events": all_events, "todays_events": todays_events}
+        save_cache(events)
+        return jsonify(events)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print(f"Error fetching calendar events: {e}")
+        cached_events = load_cache()
+        if cached_events:
+            return jsonify(cached_events)
+        return jsonify({"error": "Unable to fetch events and no cache available"}), 500
 
 
 @app.route("/api/calendar-events/<date>")
 def get_calendar_events_for_date(date):
+    logging.info(f"GET /api/calendar-events/{date}")
     try:
         print(f"Fetching events for date: {date}")
         all_events, _ = fetch_and_filter_calendar_events()

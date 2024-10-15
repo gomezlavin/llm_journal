@@ -4,6 +4,8 @@ async function loadJournalEntries() {
     const response = await fetch("/api/journal-entries");
     const entries = await response.json();
     const entryList = document.getElementById("entry-list");
+    const currentFilename =
+      document.getElementById("editor-content").dataset.currentFilename;
 
     // Clear existing entries
     entryList.innerHTML = "";
@@ -11,6 +13,7 @@ async function loadJournalEntries() {
     entries.forEach((entry) => {
       const li = document.createElement("li");
       li.className = "entry-item";
+      li.dataset.filename = entry.filename;
       li.innerHTML = `
         <div class="entry-title" title="${entry.title}">${entry.title}</div>
         <div class="entry-preview">
@@ -21,6 +24,9 @@ async function loadJournalEntries() {
       li.addEventListener("click", () => loadEntry(entry.filename));
       entryList.appendChild(li);
     });
+
+    // Highlight the current entry
+    highlightCurrentEntry(currentFilename);
   } catch (error) {
     console.error("Error loading journal entries:", error);
   }
@@ -57,6 +63,9 @@ async function loadEntry(filename) {
     } else {
       console.error("No filename available for loading events");
     }
+
+    // Highlight the current entry in the sidebar
+    highlightCurrentEntry(filename);
   } catch (error) {
     console.error("Error loading entry:", error);
   }
@@ -272,23 +281,23 @@ async function reloadCurrentJournalEntry() {
 }
 
 // Function to fetch calendar events
-async function fetchCalendarEvents() {
+async function fetchCalendarEvents(forceRefresh = false) {
+  const url = forceRefresh
+    ? "/api/calendar-events?refresh=true"
+    : "/api/calendar-events";
   try {
-    const response = await fetch("/api/calendar-events");
+    const response = await fetch(url);
     const data = await response.json();
-    return data.todays_events.map((event) => {
-      const [_, summary, start_time, end_time] = event.match(
-        /Summary: (.*?), Start time: (.*?), End time: (.*?),/
-      );
-      return {
-        title: summary,
-        start_time: start_time,
-        end_time: end_time,
-      };
-    });
+
+    // Use the current date for today's events
+    const today = new Date().toISOString().split("T")[0];
+
+    // Update the calendar sidebar with today's events
+    updateCalendarSidebar(data.todays_events, today);
   } catch (error) {
     console.error("Error fetching calendar events:", error);
-    return [];
+    // Update the calendar sidebar to show an error message
+    updateCalendarSidebar([], new Date().toISOString().split("T")[0]);
   }
 }
 
@@ -395,6 +404,17 @@ async function updateRightSidebarEvents(filename) {
   }
 }
 
+// Add this function to highlight the current entry
+function highlightCurrentEntry(filename) {
+  const entryItems = document.querySelectorAll(".entry-item");
+  entryItems.forEach((item) => {
+    item.classList.remove("current-entry");
+    if (item.dataset.filename === filename) {
+      item.classList.add("current-entry");
+    }
+  });
+}
+
 document.addEventListener("DOMContentLoaded", function () {
   const toggleSidebarBtn = document.getElementById("toggle-sidebar-btn");
   const rightSidebar = document.getElementById("right-sidebar");
@@ -409,5 +429,10 @@ document.addEventListener("DOMContentLoaded", function () {
     } else {
       toggleSidebarBtn.textContent = "📁";
     }
+  });
+
+  const refreshEventsBtn = document.getElementById("refresh-events-btn");
+  refreshEventsBtn.addEventListener("click", function () {
+    fetchCalendarEvents(true);
   });
 });

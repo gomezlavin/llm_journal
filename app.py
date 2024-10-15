@@ -188,8 +188,13 @@ async def update_journal_file(filename: str, new_content: str):
     with open(file_path, "r") as f:
         existing_content = f.read().strip()
 
-    # Append new content to existing content
-    updated_entry = f"{existing_content}\n\n{new_content}"
+    # Prepare the prompt for the LLM
+    prompt = JOURNAL_PROMPT.format(
+        existing_entry=existing_content, user_content=new_content
+    )
+
+    # Generate journal entry using LLM
+    updated_entry = await generate_journal_entry(prompt)
 
     # Write the updated entry to the file
     with open(file_path, "w") as f:
@@ -283,11 +288,56 @@ async def on_message(message: cl.Message):
             with open(os.path.join("data", current_entry), "r") as f:
                 entry_content = f.read()
             user_content = f"Current journal entry:\n\n{entry_content}\n\nUser question: {user_content}"
+
+        # Special handling for calendar-related questions
+        if "today" in user_content.lower() and "event" in user_content.lower():
+            # Fetch today's events directly
+            today = datetime.datetime.now().strftime("%Y-%m-%d")
+            calendar_events = fetch_and_filter_calendar_events(
+                target_date=today, force_refresh=True
+            )
+            if calendar_events:
+                all_events, todays_events = calendar_events
+                events_str = "\n".join([f"- {event}" for event in todays_events])
+                response_text = (
+                    f"Here are your events for today ({today}):\n{events_str}"
+                )
+            else:
+                response_text = (
+                    f"You don't have any events scheduled for today ({today})."
+                )
+
+            await cl.Message(content=response_text).send()
+            return
+
     elif user_input.lower().startswith("j:"):
         # Journal mode: Use JOURNAL_PROMPT
         system_prompt = JOURNAL_PROMPT
         user_content = user_input[2:].strip()
         message_type = "journal"
+
+        # Include the current journal entry and recent conversation history
+        if current_entry:
+            with open(os.path.join("data", current_entry), "r") as f:
+                entry_content = f.read()
+
+            # Get the last few messages from the conversation history
+            recent_history = message_history[-5:]  # Adjust the number as needed
+            conversation_context = "\n".join(
+                [f"{msg['role']}: {msg['content']}" for msg in recent_history]
+            )
+
+            user_content = f"""Current journal entry:
+
+{entry_content}
+
+Recent conversation:
+{conversation_context}
+
+User input for journal update: {user_content}
+
+Please update the journal entry based on the user's input and the recent conversation context. Be sure to maintain the overall structure and flow of the existing entry while incorporating new information or addressing the user's specific request."""
+
     else:
         # Inform the user about using prefixes
         await cl.Message(
@@ -335,9 +385,11 @@ async def on_message(message: cl.Message):
 
         await print_response(response_text)
     elif message_type == "journal" and current_entry:
-        updated_filename = await update_journal_file(current_entry, user_content)
-        response_text = f"Journal entry '{updated_filename}' has been updated."
-        await cl.Message(content=response_text).send()
+        response_text = await generate_response(message_history)
+        updated_filename = await update_journal_file(current_entry, response_text)
+        await cl.Message(
+            content=f"Journal entry '{updated_filename}' has been updated. Here's a summary of the changes:\n\n{response_text[:200]}..."
+        ).send()
 
         # Notify the frontend about the update
         if cl.context.session.client_type == "copilot":
@@ -369,8 +421,13 @@ async def update_journal_file(filename: str, new_content: str):
     with open(file_path, "r") as f:
         existing_content = f.read().strip()
 
-    # Append new content to existing content
-    updated_entry = f"{existing_content}\n\n{new_content}"
+    # Prepare the prompt for the LLM
+    prompt = JOURNAL_PROMPT.format(
+        existing_entry=existing_content, user_content=new_content
+    )
+
+    # Generate journal entry using LLM
+    updated_entry = await generate_journal_entry(prompt)
 
     # Write the updated entry to the file
     with open(file_path, "w") as f:

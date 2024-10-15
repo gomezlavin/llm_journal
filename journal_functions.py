@@ -5,6 +5,7 @@ import asyncio
 from serpapi import GoogleSearch
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings
 from llama_index.embeddings.ollama import OllamaEmbedding
+from llama_index.embeddings.openai import OpenAIEmbedding
 
 
 async def get_top_news():
@@ -51,17 +52,12 @@ async def get_top_news():
 async def journal_search(query):
     documents = SimpleDirectoryReader("data").load_data()
 
-    if os.getenv("OLLAMA") == "1":
-        ollama_embedding_config = {
-            "model_name": os.getenv("OLLAMA_MODEL", "llama3.2"),
-            "base_url": os.getenv("OLLAMA_ENDPOINT", "http://localhost:11434"),
-            "ollama_additional_kwargs": {"mirostat": 0},
-        }
-        ollama_embedding = OllamaEmbedding(**ollama_embedding_config)
+    if USE_OLLAMA:
+        ollama_embedding = OllamaEmbedding(**OLLAMA_EMBEDDING_CONFIG)
         Settings.embed_model = ollama_embedding
     else:
-        # Reset to default embedding if OLLAMA is not set to "1"
-        Settings.embed_model = None
+        openai_embedding = OpenAIEmbedding(**OPENAI_EMBEDDING_CONFIG)
+        Settings.embed_model = openai_embedding
 
     # Create an index from the documents
     index = VectorStoreIndex.from_documents(documents)
@@ -123,3 +119,18 @@ async def calendar_search(query):
             actions=actions,
         ).send()
         return error_message
+
+
+# Add these configurations at the top of the file
+USE_OLLAMA = os.getenv("OLLAMA") == "1"
+
+OLLAMA_EMBEDDING_CONFIG = {
+    "model_name": os.getenv("OLLAMA_MODEL", "llama3.2"),
+    "base_url": os.getenv("OLLAMA_ENDPOINT", "http://localhost:11434"),
+    "ollama_additional_kwargs": {"mirostat": 0},
+}
+
+OPENAI_EMBEDDING_CONFIG = {
+    "model": "text-embedding-ada-002",
+    "api_key": os.getenv("OPENAI_API_KEY"),
+}
